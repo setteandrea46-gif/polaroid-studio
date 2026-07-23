@@ -117,11 +117,16 @@ async function uploadCloud(files) {
 async function uploadLocal(files) {
   if (photos.every(p => p.sample)) photos = [];
   for (const file of files) {
-    const dataUrl = await fileToDataUrl(file);
-    photos.unshift({ id: crypto.randomUUID(), event: $("eventInput").value, date: $("dateInput").value, url: dataUrl });
+    const item = {
+      id: crypto.randomUUID(),
+      event: $("eventInput").value,
+      date: $("dateInput").value,
+      blob: file,
+      name: file.name
+    };
+    await saveLocalPhoto(item);
+    photos.unshift({ ...item, url: URL.createObjectURL(file) });
   }
-  try { localStorage.setItem("polaroid-photos", JSON.stringify(photos)); }
-  catch { throw new Error("Memoria del browser piena: nella demo usa meno foto o file più piccoli."); }
 }
 
 async function removePhoto(id) {
@@ -134,7 +139,7 @@ async function removePhoto(id) {
     await loadCloudPhotos();
   } else {
     photos = photos.filter(p => p.id !== id);
-    localStorage.setItem("polaroid-photos", JSON.stringify(photos));
+    await deleteLocalPhoto(id);
   }
   render(); toast("Fotografia eliminata");
 }
@@ -172,11 +177,62 @@ async function downloadPhoto(id) {
   } catch { window.open(p.url, "_blank"); }
 }
 
-function readLocalPhotos() {
-  try { return Promise.resolve(JSON.parse(localStorage.getItem("polaroid-photos")) || []); }
-  catch { return Promise.resolve([]); }
+const DB_NAME = "polaroid-studio";
+const STORE_NAME = "photos";
+
+function openLocalDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
+        request.result.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
-function fileToDataUrl(file) { return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); }); }
+
+async function readLocalPhotos() {
+  try {
+    const db = await openLocalDb();
+    const stored = await new Promise((resolve, reject) => {
+      const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return stored
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map(item => ({ ...item, url: URL.createObjectURL(item.blob) }));
+  } catch {
+    return [];
+  }
+}
+
+async function saveLocalPhoto(photo) {
+  try {
+    const db = await openLocalDb();
+    await new Promise((resolve, reject) => {
+      const request = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(photo);
+      request.onsuccess = resolve;
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+  } catch {
+    throw new Error("Il telefono non concede spazio sufficiente. Libera memoria oppure attiva l’archivio cloud.");
+  }
+}
+
+async function deleteLocalPhoto(id) {
+  const db = await openLocalDb();
+  await new Promise((resolve, reject) => {
+    const request = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(id);
+    request.onsuccess = resolve;
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+}
 function formatDate(date) { return new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${date}T12:00:00`)); }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function toast(message) { $("toast").textContent = message; $("toast").classList.add("show"); setTimeout(() => $("toast").classList.remove("show"), 2200); }

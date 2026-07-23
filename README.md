@@ -4,7 +4,7 @@ Galleria fotografica responsive con:
 
 - area pubblica per cercare e scaricare fotografie;
 - area amministratore per caricare ed eliminare foto;
-- modalità demo locale pronta all'uso;
+- modalità demo locale pronta all'uso, con archivio IndexedDB adatto anche a più fotografie;
 - modalità cloud con Supabase per condividere le foto tra tutti i dispositivi.
 
 ## Prova locale
