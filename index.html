@@ -72,6 +72,20 @@
         <button class="primary-button wide" type="submit">Accedi</button>
         <p class="form-message" id="loginMessage"></p>
       </form>
+      <p class="auth-switch">Non hai ancora un account? <button id="showSignup" type="button">Registrati</button></p>
+    </div>
+    <div class="hidden" id="signupView">
+      <p class="eyebrow">NUOVO ACCOUNT</p>
+      <h2>Registrati.</h2>
+      <p class="dialog-copy">Crea il tuo account amministratore. Riceverai un’e-mail per confermare l’indirizzo.</p>
+      <form id="signupForm">
+        <label>Email<input id="signupEmail" type="email" autocomplete="email" placeholder="admin@azienda.it" required></label>
+        <label>Password<input id="signupPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Almeno 8 caratteri" required></label>
+        <label>Conferma password<input id="signupPasswordConfirm" type="password" autocomplete="new-password" minlength="8" placeholder="Ripeti la password" required></label>
+        <button class="primary-button wide" type="submit">Crea account</button>
+        <p class="form-message" id="signupMessage"></p>
+      </form>
+      <p class="auth-switch">Hai già un account? <button id="showLogin" type="button">Torna ad Accedi</button></p>
     </div>
     <div class="hidden" id="adminView">
       <div class="admin-heading">
@@ -109,6 +123,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>

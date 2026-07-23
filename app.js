@@ -30,7 +30,8 @@ async function init() {
     const module = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
     supabase = module.createClient(config.supabaseUrl, config.supabaseAnonKey);
     const { data } = await supabase.auth.getSession();
-    isAdmin = Boolean(data.session);
+    isAdmin = data.session ? await checkAdmin() : false;
+    if (data.session && !isAdmin) await supabase.auth.signOut();
     await loadCloudPhotos();
     $("modeNote").textContent = "Modalità online attiva: le foto pubblicate saranno visibili a tutti.";
   } else {
@@ -43,12 +44,15 @@ async function init() {
 }
 
 function bindEvents() {
-  $("adminButton").onclick = () => { showAdminState(); dialog.showModal(); };
+  $("adminButton").onclick = () => { showLoginView(); showAdminState(); dialog.showModal(); };
   $("closeDialog").onclick = () => dialog.close();
   dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
   $("logoutButton").onclick = logout;
   $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
   $("loginForm").onsubmit = login;
+  $("signupForm").onsubmit = signup;
+  $("showSignup").onclick = showSignupView;
+  $("showLogin").onclick = showLoginView;
   $("uploadForm").onsubmit = upload;
   $("searchInput").oninput = render;
   $("filters").onclick = (e) => {
@@ -60,7 +64,22 @@ function bindEvents() {
 
 function showAdminState() {
   $("loginView").classList.toggle("hidden", isAdmin);
+  if (isAdmin) $("signupView").classList.add("hidden");
   $("adminView").classList.toggle("hidden", !isAdmin);
+}
+
+function showSignupView() {
+  $("loginView").classList.add("hidden");
+  $("signupView").classList.remove("hidden");
+  $("adminView").classList.add("hidden");
+  $("signupMessage").textContent = "";
+}
+
+function showLoginView() {
+  if (isAdmin) return;
+  $("loginView").classList.remove("hidden");
+  $("signupView").classList.add("hidden");
+  $("adminView").classList.add("hidden");
 }
 
 async function login(e) {
@@ -69,13 +88,56 @@ async function login(e) {
   if (cloudEnabled) {
     const { error } = await supabase.auth.signInWithPassword({ email: $("emailInput").value, password: $("passwordInput").value });
     if (error) return $("loginMessage").textContent = "Email o password non corrette.";
-    isAdmin = true;
+    isAdmin = await checkAdmin();
+    if (!isAdmin) {
+      await supabase.auth.signOut();
+      $("loginMessage").textContent = "Account registrato, ma non ancora abilitato come amministratore.";
+      return;
+    }
     await loadCloudPhotos();
   } else {
     $("loginMessage").textContent = "Accesso protetto non ancora attivato: collega prima l’archivio cloud.";
     return;
   }
   isAdmin = true; $("loginMessage").textContent = ""; showAdminState(); render();
+}
+
+async function signup(e) {
+  e.preventDefault();
+  const email = $("signupEmail").value.trim();
+  const password = $("signupPassword").value;
+  const confirmation = $("signupPasswordConfirm").value;
+  const message = $("signupMessage");
+  if (password !== confirmation) {
+    message.textContent = "Le due password non coincidono.";
+    return;
+  }
+  if (!cloudEnabled) {
+    message.textContent = "Registrazione non ancora attiva: collega prima l’archivio cloud.";
+    return;
+  }
+  message.textContent = "Creazione account in corso…";
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: `${location.origin}${location.pathname}` }
+  });
+  if (error) {
+    message.textContent = error.message.includes("already") ? "Esiste già un account con questa e-mail." : "Registrazione non riuscita. Controlla i dati.";
+    return;
+  }
+  await supabase.auth.signOut();
+  $("signupForm").reset();
+  message.textContent = "Account creato! Controlla la tua e-mail per confermarlo. Poi dovrà essere abilitato come amministratore.";
+}
+
+async function checkAdmin() {
+  if (!supabase) return false;
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) return false;
+  const { data, error } = await supabase.from("admins").select("user_id").eq("user_id", userId).maybeSingle();
+  return !error && Boolean(data);
 }
 
 async function logout() {
