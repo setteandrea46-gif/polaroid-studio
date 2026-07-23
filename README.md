@@ -4,12 +4,14 @@ Galleria fotografica responsive con:
 
 - area pubblica per cercare e scaricare fotografie;
 - area amministratore per caricare ed eliminare foto;
+- accesso amministratore tramite e-mail e password;
+- una box e un link cliente diverso per ogni evento;
 - modalità demo locale pronta all'uso, con archivio IndexedDB adatto anche a più fotografie;
 - modalità cloud con Supabase per condividere le foto tra tutti i dispositivi.
 
 ## Prova locale
 
-Apri `index.html` nel browser. Premi **Area amministratore** e poi **Entra nella demo amministratore**.
+Apri `index.html` nel browser per visualizzare la galleria dimostrativa. L’accesso amministratore si attiva collegando Supabase: le credenziali non devono essere salvate nei file pubblici del sito.
 
 ## Attivazione online
 

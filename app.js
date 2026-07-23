@@ -4,17 +4,18 @@ let supabase = null;
 let isAdmin = false;
 let photos = [];
 let selectedFilter = "Tutti";
+const requestedEventCode = new URLSearchParams(location.search).get("evento");
 
 const $ = (id) => document.getElementById(id);
 const grid = $("photoGrid");
 const dialog = $("adminDialog");
 
 const samples = [
-  { id: "sample-1", event: "Summer Party", date: "2026-07-18", url: svgPhoto("#db8a62", "#394d62", "SUMMER"), sample: true },
-  { id: "sample-2", event: "Matrimonio", date: "2026-06-28", url: svgPhoto("#b98f7e", "#65705b", "LOVE"), sample: true },
-  { id: "sample-3", event: "Compleanno", date: "2026-06-14", url: svgPhoto("#59475b", "#d5a957", "PARTY"), sample: true },
-  { id: "sample-4", event: "Summer Party", date: "2026-07-18", url: svgPhoto("#4e7180", "#e2b172", "SUNSET"), sample: true },
-  { id: "sample-5", event: "Matrimonio", date: "2026-06-28", url: svgPhoto("#9c6458", "#d9cbb5", "FOREVER"), sample: true }
+  { id: "sample-1", event: "Summer Party", eventCode: "summer-party-demo", date: "2026-07-18", url: svgPhoto("#db8a62", "#394d62", "SUMMER"), sample: true },
+  { id: "sample-2", event: "Matrimonio", eventCode: "matrimonio-demo", date: "2026-06-28", url: svgPhoto("#b98f7e", "#65705b", "LOVE"), sample: true },
+  { id: "sample-3", event: "Compleanno", eventCode: "compleanno-demo", date: "2026-06-14", url: svgPhoto("#59475b", "#d5a957", "PARTY"), sample: true },
+  { id: "sample-4", event: "Summer Party", eventCode: "summer-party-demo", date: "2026-07-18", url: svgPhoto("#4e7180", "#e2b172", "SUNSET"), sample: true },
+  { id: "sample-5", event: "Matrimonio", eventCode: "matrimonio-demo", date: "2026-06-28", url: svgPhoto("#9c6458", "#d9cbb5", "FOREVER"), sample: true }
 ];
 
 function svgPhoto(a, b, word) {
@@ -35,7 +36,7 @@ async function init() {
   } else {
     photos = await readLocalPhotos();
     if (!photos.length) photos = samples;
-    $("modeNote").textContent = "Modalità demo: i caricamenti restano soltanto su questo dispositivo. Collega Supabase per condividerli online.";
+    $("modeNote").textContent = "Per proteggere l’area amministratore e condividere i link evento, completa il collegamento sicuro a Supabase.";
   }
   render();
   bindEvents();
@@ -45,7 +46,6 @@ function bindEvents() {
   $("adminButton").onclick = () => { showAdminState(); dialog.showModal(); };
   $("closeDialog").onclick = () => dialog.close();
   dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
-  $("demoLogin").onclick = () => { isAdmin = true; showAdminState(); render(); };
   $("logoutButton").onclick = logout;
   $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
   $("loginForm").onsubmit = login;
@@ -61,27 +61,42 @@ function bindEvents() {
 function showAdminState() {
   $("loginView").classList.toggle("hidden", isAdmin);
   $("adminView").classList.toggle("hidden", !isAdmin);
-  $("demoLogin").classList.toggle("hidden", cloudEnabled);
-  $("loginForm").classList.toggle("hidden", !cloudEnabled);
 }
 
 async function login(e) {
   e.preventDefault();
   $("loginMessage").textContent = "Accesso in corso…";
-  const { error } = await supabase.auth.signInWithPassword({ email: $("emailInput").value, password: $("passwordInput").value });
-  if (error) return $("loginMessage").textContent = "Email o password non corrette.";
+  if (cloudEnabled) {
+    const { error } = await supabase.auth.signInWithPassword({ email: $("emailInput").value, password: $("passwordInput").value });
+    if (error) return $("loginMessage").textContent = "Email o password non corrette.";
+    isAdmin = true;
+    await loadCloudPhotos();
+  } else {
+    $("loginMessage").textContent = "Accesso protetto non ancora attivato: collega prima l’archivio cloud.";
+    return;
+  }
   isAdmin = true; $("loginMessage").textContent = ""; showAdminState(); render();
 }
 
 async function logout() {
   if (supabase) await supabase.auth.signOut();
-  isAdmin = false; showAdminState(); render();
+  isAdmin = false;
+  if (cloudEnabled) await loadCloudPhotos();
+  showAdminState(); render();
 }
 
 async function loadCloudPhotos() {
-  const { data, error } = await supabase.from("photos").select("*").order("event_date", { ascending: false });
+  let query = supabase.from("photos").select("*").order("event_date", { ascending: false });
+  if (!isAdmin) {
+    if (!requestedEventCode) {
+      photos = [];
+      return;
+    }
+    query = query.eq("event_code", requestedEventCode);
+  }
+  const { data, error } = await query;
   if (error) return toast("Impossibile caricare la galleria");
-  photos = (data || []).map(p => ({ id: p.id, event: p.event_name, date: p.event_date, url: `${config.supabaseUrl}/storage/v1/object/public/photos/${p.storage_path}`, path: p.storage_path }));
+  photos = (data || []).map(p => ({ id: p.id, event: p.event_name, eventCode: p.event_code, date: p.event_date, url: `${config.supabaseUrl}/storage/v1/object/public/photos/${p.storage_path}`, path: p.storage_path }));
 }
 
 async function upload(e) {
@@ -91,10 +106,13 @@ async function upload(e) {
   const button = $("publishButton");
   button.disabled = true; button.textContent = "Pubblicazione…";
   try {
-    if (cloudEnabled) await uploadCloud(files);
-    else await uploadLocal(files);
+    const eventCode = createEventCode();
+    if (cloudEnabled) await uploadCloud(files, eventCode);
+    else await uploadLocal(files, eventCode);
     $("uploadForm").reset(); $("fileCount").textContent = "";
-    $("uploadMessage").textContent = "Fotografie pubblicate con successo.";
+    const eventLink = buildEventLink(eventCode);
+    $("uploadMessage").innerHTML = `Box pubblicata. <button class="inline-copy" type="button" id="copyNewLink">Copia il link per il cliente</button>`;
+    $("copyNewLink").onclick = () => copyEventLink(eventLink);
     render(); toast("Foto pubblicate!");
   } catch (err) {
     $("uploadMessage").textContent = err.message || "Qualcosa è andato storto.";
@@ -103,23 +121,24 @@ async function upload(e) {
   }
 }
 
-async function uploadCloud(files) {
+async function uploadCloud(files, eventCode) {
   for (const file of files) {
     const safeName = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const { error: storageError } = await supabase.storage.from("photos").upload(safeName, file);
     if (storageError) throw storageError;
-    const { error: dbError } = await supabase.from("photos").insert({ event_name: $("eventInput").value, event_date: $("dateInput").value, storage_path: safeName });
+    const { error: dbError } = await supabase.from("photos").insert({ event_name: $("eventInput").value, event_date: $("dateInput").value, event_code: eventCode, storage_path: safeName });
     if (dbError) throw dbError;
   }
   await loadCloudPhotos();
 }
 
-async function uploadLocal(files) {
+async function uploadLocal(files, eventCode) {
   if (photos.every(p => p.sample)) photos = [];
   for (const file of files) {
     const item = {
       id: crypto.randomUUID(),
       event: $("eventInput").value,
+      eventCode,
       date: $("dateInput").value,
       blob: file,
       name: file.name
@@ -146,9 +165,10 @@ async function removePhoto(id) {
 
 function render() {
   const query = $("searchInput").value.toLowerCase();
-  const events = [...new Set(photos.map(p => p.event))];
+  const allowedPhotos = requestedEventCode && !isAdmin ? photos.filter(p => p.eventCode === requestedEventCode) : photos;
+  const events = [...new Set(allowedPhotos.map(p => p.event))];
   $("filters").innerHTML = ["Tutti", ...events].map(x => `<button class="${x === selectedFilter ? "active" : ""}" data-filter="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join("");
-  const visible = photos.filter(p => (selectedFilter === "Tutti" || p.event === selectedFilter) && (`${p.event} ${p.date}`.toLowerCase().includes(query)));
+  const visible = allowedPhotos.filter(p => (selectedFilter === "Tutti" || p.event === selectedFilter) && (`${p.event} ${p.date}`.toLowerCase().includes(query)));
   grid.innerHTML = visible.map((p, i) => `
     <article class="photo-card">
       <div class="polaroid">
@@ -163,6 +183,61 @@ function render() {
   $("emptyState").classList.toggle("hidden", visible.length > 0);
   grid.querySelectorAll("[data-download]").forEach(b => b.onclick = () => downloadPhoto(b.dataset.download));
   grid.querySelectorAll("[data-delete]").forEach(b => b.onclick = () => removePhoto(b.dataset.delete));
+  renderEventLinks();
+}
+
+function renderEventLinks() {
+  const container = $("eventLinks");
+  if (!container || !isAdmin) return;
+  const boxes = new Map();
+  photos.filter(p => !p.sample && p.eventCode).forEach(p => {
+    if (!boxes.has(p.eventCode)) boxes.set(p.eventCode, { name: p.event, date: p.date, count: 0 });
+    boxes.get(p.eventCode).count += 1;
+  });
+  if (!boxes.size) {
+    container.innerHTML = `<p class="no-events">Crea la prima box caricando le fotografie.</p>`;
+    return;
+  }
+  container.innerHTML = [...boxes].map(([code, box]) => `
+    <article class="event-link-card">
+      <div>
+        <strong>${escapeHtml(box.name)}</strong>
+        <small>${formatDate(box.date)} · ${box.count} foto</small>
+      </div>
+      <div class="event-actions">
+        <button type="button" data-copy-event="${code}">Copia link</button>
+        <a href="${buildEventLink(code)}" target="_blank" aria-label="Apri box">↗</a>
+      </div>
+    </article>
+  `).join("");
+  container.querySelectorAll("[data-copy-event]").forEach(button => {
+    button.onclick = () => copyEventLink(buildEventLink(button.dataset.copyEvent));
+  });
+}
+
+function createEventCode() {
+  return `${slugify($("eventInput").value)}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function buildEventLink(code) {
+  const url = new URL(location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("evento", code);
+  return url.toString();
+}
+
+async function copyEventLink(link) {
+  try {
+    await navigator.clipboard.writeText(link);
+    toast("Link dell’evento copiato");
+  } catch {
+    prompt("Copia questo link e invialo al cliente:", link);
+  }
+}
+
+function slugify(value) {
+  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 35);
 }
 
 async function downloadPhoto(id) {
@@ -204,7 +279,11 @@ async function readLocalPhotos() {
     db.close();
     return stored
       .sort((a, b) => b.date.localeCompare(a.date))
-      .map(item => ({ ...item, url: URL.createObjectURL(item.blob) }));
+      .map(item => ({
+        ...item,
+        eventCode: item.eventCode || `archivio-${slugify(item.event)}-${item.date}`,
+        url: URL.createObjectURL(item.blob)
+      }));
   } catch {
     return [];
   }

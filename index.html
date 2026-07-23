@@ -72,7 +72,6 @@
         <button class="primary-button wide" type="submit">Accedi</button>
         <p class="form-message" id="loginMessage"></p>
       </form>
-      <button class="demo-login" id="demoLogin">Entra nella demo amministratore</button>
     </div>
     <div class="hidden" id="adminView">
       <div class="admin-heading">
@@ -94,12 +93,22 @@
         <button class="primary-button wide" id="publishButton" type="submit">Pubblica nella galleria</button>
         <p class="form-message" id="uploadMessage"></p>
       </form>
+      <section class="event-links-section">
+        <div class="event-links-heading">
+          <div>
+            <p class="eyebrow">BOX CREATE</p>
+            <h3>Link degli eventi</h3>
+          </div>
+          <small>Invia al cliente solo il link del suo evento.</small>
+        </div>
+        <div class="event-links" id="eventLinks"></div>
+      </section>
       <div class="admin-note" id="modeNote"></div>
     </div>
   </dialog>
 
   <div class="toast" id="toast"></div>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=2"></script>
+  <script type="module" src="app.js?v=3"></script>
 </body>
 </html>
