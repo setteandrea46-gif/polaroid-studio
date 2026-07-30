@@ -72,6 +72,7 @@
         <button class="primary-button wide" type="submit">Accedi</button>
         <p class="form-message" id="loginMessage"></p>
       </form>
+      <p class="auth-switch"><button id="showRecovery" type="button">Password dimenticata?</button></p>
       <p class="auth-switch">Non hai ancora un account? <button id="showSignup" type="button">Registrati</button></p>
     </div>
     <div class="hidden" id="signupView">
@@ -81,11 +82,31 @@
       <form id="signupForm">
         <label>Email<input id="signupEmail" type="email" autocomplete="email" placeholder="admin@azienda.it" required></label>
         <label>Password<input id="signupPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Almeno 8 caratteri" required></label>
-        <label>Conferma password<input id="signupPasswordConfirm" type="password" autocomplete="new-password" minlength="8" placeholder="Ripeti la password" required></label>
         <button class="primary-button wide" type="submit">Crea account</button>
         <p class="form-message" id="signupMessage"></p>
       </form>
       <p class="auth-switch">Hai già un account? <button id="showLogin" type="button">Torna ad Accedi</button></p>
+    </div>
+    <div class="hidden" id="recoveryView">
+      <p class="eyebrow">RECUPERO ACCOUNT</p>
+      <h2>Recupera password.</h2>
+      <p class="dialog-copy">Inserisci la tua e-mail: riceverai il link per scegliere una nuova password.</p>
+      <form id="recoveryForm">
+        <label>Email<input id="recoveryEmail" type="email" autocomplete="email" placeholder="admin@azienda.it" required></label>
+        <button class="primary-button wide" type="submit">Invia e-mail di recupero</button>
+        <p class="form-message" id="recoveryMessage"></p>
+      </form>
+      <p class="auth-switch"><button id="recoveryBack" type="button">Torna ad Accedi</button></p>
+    </div>
+    <div class="hidden" id="resetView">
+      <p class="eyebrow">NUOVA PASSWORD</p>
+      <h2>Scegli la password.</h2>
+      <p class="dialog-copy">Inserisci la nuova password che userai per accedere.</p>
+      <form id="resetForm">
+        <label>Nuova password<input id="newPasswordInput" type="password" autocomplete="new-password" minlength="8" placeholder="Almeno 8 caratteri" required></label>
+        <button class="primary-button wide" type="submit">Salva nuova password</button>
+        <p class="form-message" id="resetMessage"></p>
+      </form>
     </div>
     <div class="hidden" id="adminView">
       <div class="admin-heading">
@@ -123,6 +144,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>

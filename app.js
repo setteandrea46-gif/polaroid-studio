@@ -5,6 +5,7 @@ let isAdmin = false;
 let photos = [];
 let selectedFilter = "Tutti";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
+const passwordResetRequested = new URLSearchParams(location.search).get("reset") === "1";
 
 const $ = (id) => document.getElementById(id);
 const grid = $("photoGrid");
@@ -41,6 +42,10 @@ async function init() {
   }
   render();
   bindEvents();
+  if (passwordResetRequested) {
+    showResetView();
+    dialog.showModal();
+  }
 }
 
 function bindEvents() {
@@ -51,8 +56,12 @@ function bindEvents() {
   $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
   $("loginForm").onsubmit = login;
   $("signupForm").onsubmit = signup;
+  $("recoveryForm").onsubmit = requestPasswordReset;
+  $("resetForm").onsubmit = updatePassword;
   $("showSignup").onclick = showSignupView;
   $("showLogin").onclick = showLoginView;
+  $("showRecovery").onclick = showRecoveryView;
+  $("recoveryBack").onclick = showLoginView;
   $("uploadForm").onsubmit = upload;
   $("searchInput").oninput = render;
   $("filters").onclick = (e) => {
@@ -65,12 +74,16 @@ function bindEvents() {
 function showAdminState() {
   $("loginView").classList.toggle("hidden", isAdmin);
   if (isAdmin) $("signupView").classList.add("hidden");
+  if (isAdmin) $("recoveryView").classList.add("hidden");
+  if (isAdmin) $("resetView").classList.add("hidden");
   $("adminView").classList.toggle("hidden", !isAdmin);
 }
 
 function showSignupView() {
   $("loginView").classList.add("hidden");
   $("signupView").classList.remove("hidden");
+  $("recoveryView").classList.add("hidden");
+  $("resetView").classList.add("hidden");
   $("adminView").classList.add("hidden");
   $("signupMessage").textContent = "";
 }
@@ -79,7 +92,28 @@ function showLoginView() {
   if (isAdmin) return;
   $("loginView").classList.remove("hidden");
   $("signupView").classList.add("hidden");
+  $("recoveryView").classList.add("hidden");
+  $("resetView").classList.add("hidden");
   $("adminView").classList.add("hidden");
+}
+
+function showRecoveryView() {
+  $("loginView").classList.add("hidden");
+  $("signupView").classList.add("hidden");
+  $("recoveryView").classList.remove("hidden");
+  $("resetView").classList.add("hidden");
+  $("adminView").classList.add("hidden");
+  $("recoveryMessage").textContent = "";
+  $("recoveryEmail").value = $("emailInput").value;
+}
+
+function showResetView() {
+  $("loginView").classList.add("hidden");
+  $("signupView").classList.add("hidden");
+  $("recoveryView").classList.add("hidden");
+  $("resetView").classList.remove("hidden");
+  $("adminView").classList.add("hidden");
+  $("resetMessage").textContent = "";
 }
 
 async function login(e) {
@@ -106,29 +140,74 @@ async function signup(e) {
   e.preventDefault();
   const email = $("signupEmail").value.trim();
   const password = $("signupPassword").value;
-  const confirmation = $("signupPasswordConfirm").value;
   const message = $("signupMessage");
-  if (password !== confirmation) {
-    message.textContent = "Le due password non coincidono.";
-    return;
-  }
   if (!cloudEnabled) {
     message.textContent = "Registrazione non ancora attiva: collega prima l’archivio cloud.";
     return;
   }
   message.textContent = "Creazione account in corso…";
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: { emailRedirectTo: `${location.origin}${location.pathname}` }
   });
   if (error) {
-    message.textContent = error.message.includes("already") ? "Esiste già un account con questa e-mail." : "Registrazione non riuscita. Controlla i dati.";
+    message.textContent = readableAuthError(error, "signup");
+    return;
+  }
+  if (!data.user?.identities?.length) {
+    message.textContent = "Questo account esiste già. Torna ad Accedi oppure usa Password dimenticata.";
     return;
   }
   await supabase.auth.signOut();
   $("signupForm").reset();
-  message.textContent = "Account creato! Controlla la tua e-mail per confermarlo. Poi dovrà essere abilitato come amministratore.";
+  message.textContent = "Account creato! Controlla la tua e-mail e apri il link di conferma.";
+}
+
+async function requestPasswordReset(e) {
+  e.preventDefault();
+  const message = $("recoveryMessage");
+  if (!cloudEnabled) {
+    message.textContent = "Recupero password non ancora disponibile.";
+    return;
+  }
+  message.textContent = "Invio e-mail in corso…";
+  const redirectTo = `${location.origin}${location.pathname}?reset=1`;
+  const { error } = await supabase.auth.resetPasswordForEmail($("recoveryEmail").value.trim(), { redirectTo });
+  if (error) {
+    message.textContent = readableAuthError(error, "recovery");
+    return;
+  }
+  $("recoveryForm").reset();
+  message.textContent = "E-mail inviata! Controlla anche la cartella Spam.";
+}
+
+async function updatePassword(e) {
+  e.preventDefault();
+  const message = $("resetMessage");
+  message.textContent = "Salvataggio in corso…";
+  const { error } = await supabase.auth.updateUser({ password: $("newPasswordInput").value });
+  if (error) {
+    message.textContent = readableAuthError(error, "reset");
+    return;
+  }
+  await supabase.auth.signOut();
+  isAdmin = false;
+  $("resetForm").reset();
+  history.replaceState({}, "", location.pathname);
+  showLoginView();
+  $("loginMessage").textContent = "Password aggiornata. Ora puoi accedere.";
+}
+
+function readableAuthError(error, action) {
+  const text = String(error?.message || "").toLowerCase();
+  if (text.includes("rate limit")) return "Hai effettuato troppi tentativi. Attendi qualche minuto e riprova.";
+  if (text.includes("already") || text.includes("registered")) return "Questo account esiste già. Usa Accedi o Password dimenticata.";
+  if (text.includes("password") && (text.includes("weak") || text.includes("characters"))) return "La password deve contenere almeno 8 caratteri.";
+  if (text.includes("invalid email")) return "Inserisci un indirizzo e-mail valido.";
+  if (action === "recovery") return "Invio non riuscito. Attendi qualche minuto e riprova.";
+  if (action === "reset") return "Link scaduto o non valido. Richiedi una nuova e-mail.";
+  return "Operazione non riuscita. Attendi qualche minuto e riprova.";
 }
 
 async function checkAdmin() {

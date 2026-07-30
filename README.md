@@ -6,6 +6,7 @@ Galleria fotografica responsive con:
 - area amministratore per caricare ed eliminare foto;
 - accesso amministratore tramite e-mail e password;
 - registrazione con conferma dell'indirizzo e-mail;
+- recupero password tramite e-mail e scelta di una nuova password;
 - una box e un link cliente diverso per ogni evento;
 - modalità demo locale pronta all'uso, con archivio IndexedDB adatto anche a più fotografie;
 - modalità cloud con Supabase per condividere le foto tra tutti i dispositivi.
