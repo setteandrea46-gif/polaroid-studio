@@ -296,6 +296,7 @@ function render() {
         <img src="${p.url}" alt="${escapeHtml(p.event)}" loading="${i < 2 ? "eager" : "lazy"}">
         <div class="photo-info ${clientMode ? "client-photo-info" : ""}">
           ${clientMode ? "" : `<div><h3>${escapeHtml(p.event)}</h3><p>${formatDate(p.date)}${isAdmin && !p.sample ? ` · <strong>${p.downloads || 0} download</strong>` : ""}</p></div>`}
+          ${clientMode ? `<span class="download-hint">Scarica la tua foto <span aria-hidden="true">→</span></span>` : ""}
           <button class="download-button" data-download="${p.id}" aria-label="Scarica foto">↓</button>
         </div>
       </div>
