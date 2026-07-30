@@ -9,6 +9,7 @@ localStorage.removeItem("polaroid-admin-key");
 let photos = [];
 let selectedFilter = "Tutti";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
+const clientMode = Boolean(requestedEventCode);
 
 const $ = (id) => document.getElementById(id);
 const grid = $("photoGrid");
@@ -30,13 +31,17 @@ function svgPhoto(a, b, word) {
 async function init() {
   $("year").textContent = new Date().getFullYear();
   $("dateInput").valueAsDate = new Date();
+  document.body.classList.toggle("client-view", clientMode);
   if (cloudEnabled) {
     supabaseModule = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-    supabase = createSupabaseClient(adminIdentifier, adminPassword);
-    isAdmin = adminIdentifier && adminPassword ? await checkAdmin(supabase) : false;
+    const useStoredAdmin = !clientMode && adminIdentifier && adminPassword;
+    supabase = createSupabaseClient(useStoredAdmin ? adminIdentifier : "", useStoredAdmin ? adminPassword : "");
+    isAdmin = useStoredAdmin ? await checkAdmin(supabase) : false;
     if ((adminIdentifier || adminPassword) && !isAdmin) {
-      clearAdminCredentials();
-      supabase = createSupabaseClient("", "");
+      if (!clientMode) {
+        clearAdminCredentials();
+        supabase = createSupabaseClient("", "");
+      }
     }
     await loadCloudPhotos();
     $("modeNote").textContent = "Modalità online attiva: le foto pubblicate saranno visibili a tutti.";
@@ -47,16 +52,25 @@ async function init() {
   }
   render();
   bindEvents();
+  if (cloudEnabled && isAdmin) {
+    setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      await loadCloudPhotos();
+      render();
+    }, 10000);
+  }
 }
 
 function bindEvents() {
-  $("adminButton").onclick = () => { showAdminState(); dialog.showModal(); };
-  $("closeDialog").onclick = () => dialog.close();
-  dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
-  $("logoutButton").onclick = logout;
-  $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
-  $("adminLoginForm").onsubmit = loginAdmin;
-  $("uploadForm").onsubmit = upload;
+  if (!clientMode) {
+    $("adminButton").onclick = () => { showAdminState(); dialog.showModal(); };
+    $("closeDialog").onclick = () => dialog.close();
+    dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
+    $("logoutButton").onclick = logout;
+    $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
+    $("adminLoginForm").onsubmit = loginAdmin;
+    $("uploadForm").onsubmit = upload;
+  }
   $("searchInput").oninput = render;
   $("filters").onclick = (e) => {
     if (!e.target.dataset.filter) return;
@@ -139,7 +153,15 @@ async function loadCloudPhotos() {
   }
   const { data, error } = await query;
   if (error) return toast("Impossibile caricare la galleria");
-  photos = (data || []).map(p => ({ id: p.id, event: p.event_name, eventCode: p.event_code, date: p.event_date, url: `${config.supabaseUrl}/storage/v1/object/public/photos/${p.storage_path}`, path: p.storage_path }));
+  photos = (data || []).map(p => ({
+    id: p.id,
+    event: p.event_name,
+    eventCode: p.event_code,
+    date: p.event_date,
+    downloads: Number(p.download_count || 0),
+    url: `${config.supabaseUrl}/storage/v1/object/public/photos/${p.storage_path}`,
+    path: p.storage_path
+  }));
 }
 
 async function upload(e) {
@@ -209,16 +231,21 @@ async function removePhoto(id) {
 function render() {
   const query = $("searchInput").value.toLowerCase();
   const allowedPhotos = requestedEventCode && !isAdmin ? photos.filter(p => p.eventCode === requestedEventCode) : photos;
+  if (clientMode) {
+    $("clientGalleryHead").classList.remove("hidden");
+    $("clientEventName").textContent = allowedPhotos[0]?.event || "Le tue fotografie";
+    document.title = `${allowedPhotos[0]?.event || "Galleria evento"} — Polaroid Studio`;
+  }
   const events = [...new Set(allowedPhotos.map(p => p.event))];
   $("filters").innerHTML = ["Tutti", ...events].map(x => `<button class="${x === selectedFilter ? "active" : ""}" data-filter="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join("");
-  const visible = allowedPhotos.filter(p => (selectedFilter === "Tutti" || p.event === selectedFilter) && (`${p.event} ${p.date}`.toLowerCase().includes(query)));
+  const visible = allowedPhotos.filter(p => (clientMode || selectedFilter === "Tutti" || p.event === selectedFilter) && (clientMode || `${p.event} ${p.date}`.toLowerCase().includes(query)));
   grid.innerHTML = visible.map((p, i) => `
     <article class="photo-card">
       <div class="polaroid">
         ${isAdmin && !p.sample ? `<button class="delete-button" data-delete="${p.id}" aria-label="Elimina">×</button>` : ""}
         <img src="${p.url}" alt="${escapeHtml(p.event)}" loading="${i < 2 ? "eager" : "lazy"}">
-        <div class="photo-info">
-          <div><h3>${escapeHtml(p.event)}</h3><p>${formatDate(p.date)}</p></div>
+        <div class="photo-info ${clientMode ? "client-photo-info" : ""}">
+          ${clientMode ? "" : `<div><h3>${escapeHtml(p.event)}</h3><p>${formatDate(p.date)}${isAdmin && !p.sample ? ` · <strong>${p.downloads || 0} download</strong>` : ""}</p></div>`}
           <button class="download-button" data-download="${p.id}" aria-label="Scarica foto">↓</button>
         </div>
       </div>
@@ -291,8 +318,25 @@ async function downloadPhoto(id) {
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `${p.event.replace(/\s+/g, "-")}-${p.date}.jpg`; a.click();
-    URL.revokeObjectURL(url); toast("Download avviato");
-  } catch { window.open(p.url, "_blank"); }
+    URL.revokeObjectURL(url);
+    await recordDownload(p);
+    toast("Download avviato");
+  } catch {
+    window.open(p.url, "_blank");
+    await recordDownload(p);
+  }
+}
+
+async function recordDownload(photo) {
+  if (!cloudEnabled || !supabase || photo.sample) return;
+  const { data, error } = await supabase.rpc("increment_photo_download", {
+    target_photo_id: photo.id,
+    target_event_code: photo.eventCode
+  });
+  if (!error) {
+    photo.downloads = Number(data || photo.downloads + 1);
+    if (isAdmin) render();
+  }
 }
 
 const DB_NAME = "polaroid-studio";

@@ -5,12 +5,15 @@ create table if not exists public.photos (
   event_date date not null,
   event_code text not null,
   storage_path text not null unique,
+  download_count bigint not null default 0,
   created_at timestamptz not null default now()
 );
 
 alter table public.photos
 add column if not exists event_code text
 default replace(gen_random_uuid()::text, '-', '');
+alter table public.photos
+add column if not exists download_count bigint not null default 0;
 
 update public.photos
 set event_code = replace(gen_random_uuid()::text, '-', '')
@@ -65,6 +68,31 @@ $$;
 
 revoke all on function public.is_admin_request() from public;
 grant execute on function public.is_admin_request() to anon, authenticated;
+
+create or replace function public.increment_photo_download(
+  target_photo_id uuid,
+  target_event_code text
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_count bigint;
+begin
+  update public.photos
+  set download_count = download_count + 1
+  where id = target_photo_id
+    and event_code = target_event_code
+  returning download_count into new_count;
+
+  return new_count;
+end;
+$$;
+
+revoke all on function public.increment_photo_download(uuid, text) from public;
+grant execute on function public.increment_photo_download(uuid, text) to anon, authenticated;
 
 alter table public.photos enable row level security;
 

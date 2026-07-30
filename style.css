@@ -52,6 +52,16 @@ h1 em { color: var(--rust); }
 .card-a { left: 6vw; top: 27%; transform: rotate(-11deg); }
 .card-b { right: 7vw; bottom: 16%; transform: rotate(9deg); }
 .gallery-section { background: var(--white); padding: 100px clamp(24px, 7vw, 110px) 120px; }
+.client-gallery-head { display: flex; align-items: center; justify-content: space-between; gap: 30px; padding-bottom: 28px; margin-bottom: 32px; border-bottom: 1px solid var(--line); }
+.client-event-meta { text-align: right; }
+.client-event-meta small, .client-event-meta strong { display: block; }
+.client-event-meta small { margin-bottom: 7px; color: var(--rust); font-size: 9px; font-weight: 700; letter-spacing: .2em; }
+.client-event-meta strong { font-family: "Playfair Display"; font-size: clamp(23px, 4vw, 38px); line-height: 1; }
+.client-view .topbar, .client-view .hero, .client-view footer, .client-view dialog, .client-view .section-head, .client-view .filters { display: none; }
+.client-view .gallery-section { min-height: 100vh; padding-top: 28px; }
+.client-view .client-gallery-head { display: flex !important; }
+.client-view .polaroid { padding-bottom: 8px; }
+.client-photo-info { justify-content: flex-end; padding: 10px 2px 1px; }
 .section-head { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 36px; }
 .section-head h2, dialog h2 { font-size: clamp(40px, 5vw, 67px); letter-spacing: -.04em; }
 .search-box { display: flex; gap: 8px; border-bottom: 1px solid var(--ink); padding: 10px 0; min-width: 250px; }
@@ -111,5 +121,8 @@ form input:focus { border-color: var(--rust); }
   .photo-info h3 { font-size: 14px; }.photo-info p { font-size: 10px; }.download-button { width: 34px; height: 34px; }
   footer { display: grid; gap: 25px; }.form-row { grid-template-columns: 1fr; gap: 0; }
   .event-links-heading { display: block; }.event-links-heading > small { display: block; max-width: none; text-align: left; margin-top: 8px; }
+  .client-view .gallery-section { padding: 18px 14px 45px; }
+  .client-gallery-head { margin-bottom: 20px; padding: 0 3px 18px; }
+  .client-event-meta { max-width: 58%; }
 }
 @media (max-width: 420px) { .photo-grid { columns: 1; }.polaroid img { min-height: 280px; } }
