@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <script>if (new URLSearchParams(location.search).has("evento")) document.body.classList.add("client-view");</script>
@@ -45,10 +45,10 @@
       </div>
       <div class="section-head">
         <div>
-          <p class="eyebrow">LA TUA GALLERIA</p>
-          <h2>Ricordi recenti</h2>
+          <p class="eyebrow" id="galleryEyebrow">LA TUA GALLERIA</p>
+          <h2 id="galleryTitle">Ricordi recenti</h2>
         </div>
-        <label class="search-box">
+        <label class="search-box" id="searchBox">
           <span>⌕</span>
           <input id="searchInput" type="search" placeholder="Cerca evento o data…">
         </label>
@@ -122,6 +122,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=11"></script>
+  <script type="module" src="app.js?v=12"></script>
 </body>
 </html>

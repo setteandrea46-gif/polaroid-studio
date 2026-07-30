@@ -9,6 +9,7 @@ let pendingEventCode = "";
 localStorage.removeItem("polaroid-admin-key");
 let photos = [];
 let selectedFilter = "Tutti";
+let selectedAdminEventCode = "";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
 const clientMode = Boolean(requestedEventCode);
 
@@ -280,6 +281,11 @@ async function removePhoto(id) {
 
 function render() {
   const query = $("searchInput").value.toLowerCase();
+  if (isAdmin && !clientMode) {
+    renderAdminArchive(query);
+    renderEventLinks();
+    return;
+  }
   const allowedPhotos = requestedEventCode && !isAdmin ? photos.filter(p => p.eventCode === requestedEventCode) : photos;
   if (clientMode) {
     $("clientGalleryHead").classList.remove("hidden");
@@ -289,7 +295,15 @@ function render() {
   const events = [...new Set(allowedPhotos.map(p => p.event))];
   $("filters").innerHTML = ["Tutti", ...events].map(x => `<button class="${x === selectedFilter ? "active" : ""}" data-filter="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join("");
   const visible = allowedPhotos.filter(p => (clientMode || selectedFilter === "Tutti" || p.event === selectedFilter) && (clientMode || `${p.event} ${p.date}`.toLowerCase().includes(query)));
-  grid.innerHTML = visible.map((p, i) => `
+  grid.classList.remove("admin-box-grid");
+  grid.innerHTML = photoCardsMarkup(visible);
+  $("emptyState").classList.toggle("hidden", visible.length > 0);
+  bindPhotoGridActions();
+  renderEventLinks();
+}
+
+function photoCardsMarkup(items) {
+  return items.map((p, i) => `
     <article class="photo-card">
       <div class="polaroid">
         ${isAdmin && !p.sample ? `<button class="delete-button" data-delete="${p.id}" aria-label="Elimina">×</button>` : ""}
@@ -301,10 +315,90 @@ function render() {
         </div>
       </div>
     </article>`).join("");
-  $("emptyState").classList.toggle("hidden", visible.length > 0);
+}
+
+function bindPhotoGridActions() {
   grid.querySelectorAll("[data-download]").forEach(b => b.onclick = () => downloadPhoto(b.dataset.download));
   grid.querySelectorAll("[data-delete]").forEach(b => b.onclick = () => removePhoto(b.dataset.delete));
-  renderEventLinks();
+}
+
+function renderAdminArchive(query) {
+  const realPhotos = photos.filter(photo => !photo.sample && photo.eventCode);
+  const filters = $("filters");
+  const searchBox = $("searchBox");
+  if (selectedAdminEventCode) {
+    const eventPhotos = realPhotos.filter(photo => photo.eventCode === selectedAdminEventCode);
+    if (!eventPhotos.length) {
+      selectedAdminEventCode = "";
+      renderAdminArchive(query);
+      return;
+    }
+    const event = eventPhotos[0];
+    $("galleryEyebrow").textContent = "MODIFICA BOX";
+    $("galleryTitle").textContent = event.event;
+    searchBox.classList.add("hidden");
+    filters.className = "filters admin-box-toolbar";
+    filters.innerHTML = `
+      <button type="button" id="backToBoxes">← Tutte le box</button>
+      <button type="button" id="addToOpenBox">＋ Aggiungi foto</button>
+      <button type="button" id="copyOpenBoxLink">Copia link cliente</button>
+    `;
+    grid.classList.remove("admin-box-grid");
+    grid.innerHTML = photoCardsMarkup(eventPhotos);
+    $("emptyState").classList.add("hidden");
+    bindPhotoGridActions();
+    $("backToBoxes").onclick = () => {
+      selectedAdminEventCode = "";
+      render();
+    };
+    $("addToOpenBox").onclick = () => {
+      pendingEventCode = selectedAdminEventCode;
+      $("addFilesInput").click();
+    };
+    $("copyOpenBoxLink").onclick = () => copyEventLink(buildEventLink(selectedAdminEventCode));
+    return;
+  }
+
+  $("galleryEyebrow").textContent = "ARCHIVIO EVENTI";
+  $("galleryTitle").textContent = "Le tue box";
+  searchBox.classList.remove("hidden");
+  $("searchInput").placeholder = "Cerca una box…";
+  filters.className = "filters hidden";
+  const boxes = new Map();
+  realPhotos.forEach(photo => {
+    if (!boxes.has(photo.eventCode)) {
+      boxes.set(photo.eventCode, {
+        name: photo.event,
+        date: photo.date,
+        cover: photo.url,
+        count: 0,
+        downloads: 0
+      });
+    }
+    const box = boxes.get(photo.eventCode);
+    box.count += 1;
+    box.downloads += photo.downloads || 0;
+  });
+  const matchingBoxes = [...boxes].filter(([, box]) => `${box.name} ${box.date}`.toLowerCase().includes(query));
+  grid.classList.add("admin-box-grid");
+  grid.innerHTML = matchingBoxes.map(([code, box]) => `
+    <button class="admin-event-box" type="button" data-open-admin-event="${code}">
+      <img src="${box.cover}" alt="">
+      <span class="admin-event-box-copy">
+        <strong>${escapeHtml(box.name)}</strong>
+        <small>${formatDate(box.date)} · ${box.count} foto · ${box.downloads} download</small>
+        <span>Apri e modifica <b>→</b></span>
+      </span>
+    </button>
+  `).join("");
+  $("emptyState").classList.toggle("hidden", matchingBoxes.length > 0);
+  grid.querySelectorAll("[data-open-admin-event]").forEach(button => {
+    button.onclick = () => {
+      selectedAdminEventCode = button.dataset.openAdminEvent;
+      render();
+      $("galleria").scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+  });
 }
 
 function renderEventLinks() {
