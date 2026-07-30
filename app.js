@@ -333,6 +333,7 @@ function render() {
   const allowedPhotos = requestedEventCode && !isAdmin ? photos.filter(p => p.eventCode === requestedEventCode) : photos;
   if (clientMode) {
     $("clientGalleryHead").classList.remove("hidden");
+    $("clientTopAd").classList.remove("hidden");
     $("clientEventName").textContent = allowedPhotos[0]?.event || "Le tue fotografie";
     document.title = `${allowedPhotos[0]?.event || "Galleria evento"} — Polaroid Studio`;
   }
@@ -347,8 +348,10 @@ function render() {
 }
 
 function photoCardsMarkup(items) {
-  return items.map((p, i) => `
-    <article class="photo-card">
+  const content = [];
+  items.forEach((p, i) => {
+    content.push(`
+    <article class="photo-card ${clientMode ? "client-photo-card" : ""}">
       <div class="polaroid">
         ${isAdmin && !p.sample ? `<button class="delete-button" data-delete="${p.id}" aria-label="Elimina">×</button>` : ""}
         <img src="${p.url}" alt="${escapeHtml(p.event)}" loading="${i < 2 ? "eager" : "lazy"}">
@@ -358,12 +361,36 @@ function photoCardsMarkup(items) {
           <button class="download-button" data-download="${p.id}" aria-label="Scarica foto">↓</button>
         </div>
       </div>
-    </article>`).join("");
+    </article>`);
+    if (clientMode && i === 1) {
+      content.push(`
+        <aside class="client-ad-banner client-ad-inline" aria-label="Pubblicità">
+          <small>PUBBLICITÀ</small>
+          <strong>Secondo spazio pubblicitario</strong>
+          <span>Il secondo banner Google AdSense apparirà qui</span>
+        </aside>
+      `);
+    }
+    if (clientMode && (i + 1) % 5 === 0) {
+      content.push(`
+        <aside class="client-mini-ad" aria-label="Pubblicità sponsor">
+          <button type="button" data-close-mini-ad aria-label="Chiudi pubblicità">×</button>
+          <small>PUBBLICITÀ</small>
+          <strong>Spazio per uno sponsor</strong>
+          <span>Questa mini-pubblicità può essere chiusa.</span>
+        </aside>
+      `);
+    }
+  });
+  return content.join("");
 }
 
 function bindPhotoGridActions() {
   grid.querySelectorAll("[data-download]").forEach(b => b.onclick = () => downloadPhoto(b.dataset.download));
   grid.querySelectorAll("[data-delete]").forEach(b => b.onclick = () => removePhoto(b.dataset.delete));
+  grid.querySelectorAll("[data-close-mini-ad]").forEach(button => {
+    button.onclick = () => button.closest(".client-mini-ad")?.remove();
+  });
 }
 
 function renderAdminArchive(query) {
