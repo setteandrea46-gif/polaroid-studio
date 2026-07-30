@@ -2,10 +2,16 @@ const config = window.POLAROID_CONFIG || {};
 const cloudEnabled = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 let supabase = null;
 let isAdmin = false;
+const adminHashParams = new URLSearchParams(location.hash.slice(1));
+const adminKeyFromLink = adminHashParams.get("admin");
+let adminKey = adminKeyFromLink || localStorage.getItem("polaroid-admin-key") || "";
+if (adminKeyFromLink) {
+  localStorage.setItem("polaroid-admin-key", adminKeyFromLink);
+  history.replaceState({}, "", `${location.pathname}${location.search}`);
+}
 let photos = [];
 let selectedFilter = "Tutti";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
-const passwordResetRequested = new URLSearchParams(location.search).get("reset") === "1";
 
 const $ = (id) => document.getElementById(id);
 const grid = $("photoGrid");
@@ -29,10 +35,14 @@ async function init() {
   $("dateInput").valueAsDate = new Date();
   if (cloudEnabled) {
     const module = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-    supabase = module.createClient(config.supabaseUrl, config.supabaseAnonKey);
-    const { data } = await supabase.auth.getSession();
-    isAdmin = data.session ? await checkAdmin() : false;
-    if (data.session && !isAdmin) await supabase.auth.signOut();
+    supabase = module.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+      global: { headers: adminKey ? { "x-polaroid-admin-key": adminKey } : {} }
+    });
+    isAdmin = adminKey ? await checkAdmin() : false;
+    if (adminKey && !isAdmin) {
+      localStorage.removeItem("polaroid-admin-key");
+      adminKey = "";
+    }
     await loadCloudPhotos();
     $("modeNote").textContent = "Modalità online attiva: le foto pubblicate saranno visibili a tutti.";
   } else {
@@ -42,26 +52,19 @@ async function init() {
   }
   render();
   bindEvents();
-  if (passwordResetRequested) {
-    showResetView();
+  if (isAdmin && adminKeyFromLink) {
+    showAdminState();
     dialog.showModal();
   }
 }
 
 function bindEvents() {
-  $("adminButton").onclick = () => { showLoginView(); showAdminState(); dialog.showModal(); };
+  $("adminButton").onclick = () => { showAdminState(); dialog.showModal(); };
   $("closeDialog").onclick = () => dialog.close();
   dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
   $("logoutButton").onclick = logout;
   $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
-  $("loginForm").onsubmit = login;
-  $("signupForm").onsubmit = signup;
-  $("recoveryForm").onsubmit = requestPasswordReset;
-  $("resetForm").onsubmit = updatePassword;
-  $("showSignup").onclick = showSignupView;
-  $("showLogin").onclick = showLoginView;
-  $("showRecovery").onclick = showRecoveryView;
-  $("recoveryBack").onclick = showLoginView;
+  $("adminCodeForm").onsubmit = activateAdminCode;
   $("uploadForm").onsubmit = upload;
   $("searchInput").oninput = render;
   $("filters").onclick = (e) => {
@@ -73,157 +76,26 @@ function bindEvents() {
 
 function showAdminState() {
   $("loginView").classList.toggle("hidden", isAdmin);
-  if (isAdmin) $("signupView").classList.add("hidden");
-  if (isAdmin) $("recoveryView").classList.add("hidden");
-  if (isAdmin) $("resetView").classList.add("hidden");
   $("adminView").classList.toggle("hidden", !isAdmin);
 }
 
-function showSignupView() {
-  $("loginView").classList.add("hidden");
-  $("signupView").classList.remove("hidden");
-  $("recoveryView").classList.add("hidden");
-  $("resetView").classList.add("hidden");
-  $("adminView").classList.add("hidden");
-  $("signupMessage").textContent = "";
-}
-
-function showLoginView() {
-  if (isAdmin) return;
-  $("loginView").classList.remove("hidden");
-  $("signupView").classList.add("hidden");
-  $("recoveryView").classList.add("hidden");
-  $("resetView").classList.add("hidden");
-  $("adminView").classList.add("hidden");
-}
-
-function showRecoveryView() {
-  $("loginView").classList.add("hidden");
-  $("signupView").classList.add("hidden");
-  $("recoveryView").classList.remove("hidden");
-  $("resetView").classList.add("hidden");
-  $("adminView").classList.add("hidden");
-  $("recoveryMessage").textContent = "";
-  $("recoveryEmail").value = $("emailInput").value;
-}
-
-function showResetView() {
-  $("loginView").classList.add("hidden");
-  $("signupView").classList.add("hidden");
-  $("recoveryView").classList.add("hidden");
-  $("resetView").classList.remove("hidden");
-  $("adminView").classList.add("hidden");
-  $("resetMessage").textContent = "";
-}
-
-async function login(e) {
+async function activateAdminCode(e) {
   e.preventDefault();
-  $("loginMessage").textContent = "Accesso in corso…";
-  if (cloudEnabled) {
-    const { error } = await supabase.auth.signInWithPassword({ email: $("emailInput").value, password: $("passwordInput").value });
-    if (error) return $("loginMessage").textContent = "Email o password non corrette.";
-    isAdmin = await checkAdmin();
-    if (!isAdmin) {
-      await supabase.auth.signOut();
-      $("loginMessage").textContent = "Account registrato, ma non ancora abilitato come amministratore.";
-      return;
-    }
-    await loadCloudPhotos();
-  } else {
-    $("loginMessage").textContent = "Accesso protetto non ancora attivato: collega prima l’archivio cloud.";
-    return;
-  }
-  isAdmin = true; $("loginMessage").textContent = ""; showAdminState(); render();
-}
-
-async function signup(e) {
-  e.preventDefault();
-  const email = $("signupEmail").value.trim();
-  const password = $("signupPassword").value;
-  const message = $("signupMessage");
-  if (!cloudEnabled) {
-    message.textContent = "Registrazione non ancora attiva: collega prima l’archivio cloud.";
-    return;
-  }
-  message.textContent = "Creazione account in corso…";
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo: `${location.origin}${location.pathname}` }
-  });
-  if (error) {
-    message.textContent = readableAuthError(error, "signup");
-    return;
-  }
-  if (!data.user?.identities?.length) {
-    message.textContent = "Questo account esiste già. Torna ad Accedi oppure usa Password dimenticata.";
-    return;
-  }
-  await supabase.auth.signOut();
-  $("signupForm").reset();
-  message.textContent = "Account creato! Controlla la tua e-mail e apri il link di conferma.";
-}
-
-async function requestPasswordReset(e) {
-  e.preventDefault();
-  const message = $("recoveryMessage");
-  if (!cloudEnabled) {
-    message.textContent = "Recupero password non ancora disponibile.";
-    return;
-  }
-  message.textContent = "Invio e-mail in corso…";
-  const redirectTo = `${location.origin}${location.pathname}?reset=1`;
-  const { error } = await supabase.auth.resetPasswordForEmail($("recoveryEmail").value.trim(), { redirectTo });
-  if (error) {
-    message.textContent = readableAuthError(error, "recovery");
-    return;
-  }
-  $("recoveryForm").reset();
-  message.textContent = "E-mail inviata! Controlla anche la cartella Spam.";
-}
-
-async function updatePassword(e) {
-  e.preventDefault();
-  const message = $("resetMessage");
-  message.textContent = "Salvataggio in corso…";
-  const { error } = await supabase.auth.updateUser({ password: $("newPasswordInput").value });
-  if (error) {
-    message.textContent = readableAuthError(error, "reset");
-    return;
-  }
-  await supabase.auth.signOut();
-  isAdmin = false;
-  $("resetForm").reset();
-  history.replaceState({}, "", location.pathname);
-  showLoginView();
-  $("loginMessage").textContent = "Password aggiornata. Ora puoi accedere.";
-}
-
-function readableAuthError(error, action) {
-  const text = String(error?.message || "").toLowerCase();
-  if (text.includes("rate limit")) return "Hai effettuato troppi tentativi. Attendi qualche minuto e riprova.";
-  if (text.includes("already") || text.includes("registered")) return "Questo account esiste già. Usa Accedi o Password dimenticata.";
-  if (text.includes("password") && (text.includes("weak") || text.includes("characters"))) return "La password deve contenere almeno 8 caratteri.";
-  if (text.includes("invalid email")) return "Inserisci un indirizzo e-mail valido.";
-  if (action === "recovery") return "Invio non riuscito. Attendi qualche minuto e riprova.";
-  if (action === "reset") return "Link scaduto o non valido. Richiedi una nuova e-mail.";
-  return "Operazione non riuscita. Attendi qualche minuto e riprova.";
+  const code = $("adminCodeInput").value.trim();
+  if (!code) return;
+  localStorage.setItem("polaroid-admin-key", code);
+  location.reload();
 }
 
 async function checkAdmin() {
   if (!supabase) return false;
-  const { data: sessionData } = await supabase.auth.getSession();
-  const userId = sessionData.session?.user?.id;
-  if (!userId) return false;
-  const { data, error } = await supabase.from("admins").select("user_id").eq("user_id", userId).maybeSingle();
-  return !error && Boolean(data);
+  const { data, error } = await supabase.rpc("is_admin_request");
+  return !error && data === true;
 }
 
 async function logout() {
-  if (supabase) await supabase.auth.signOut();
-  isAdmin = false;
-  if (cloudEnabled) await loadCloudPhotos();
-  showAdminState(); render();
+  localStorage.removeItem("polaroid-admin-key");
+  location.reload();
 }
 
 async function loadCloudPhotos() {
