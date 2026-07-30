@@ -3,8 +3,9 @@ const cloudEnabled = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 let supabase = null;
 let supabaseModule = null;
 let isAdmin = false;
-let adminIdentifier = localStorage.getItem("polaroid-admin-identifier") || "";
-let adminPassword = localStorage.getItem("polaroid-admin-password") || "";
+let adminIdentifier = localStorage.getItem("polaroid-admin-identifier") || readCookie("polaroid-admin-identifier") || "";
+let adminPassword = localStorage.getItem("polaroid-admin-password") || readCookie("polaroid-admin-password") || "";
+let pendingEventCode = "";
 localStorage.removeItem("polaroid-admin-key");
 let photos = [];
 let selectedFilter = "Tutti";
@@ -36,8 +37,9 @@ async function init() {
     supabaseModule = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
     const useStoredAdmin = !clientMode && adminIdentifier && adminPassword;
     supabase = createSupabaseClient(useStoredAdmin ? adminIdentifier : "", useStoredAdmin ? adminPassword : "");
-    isAdmin = useStoredAdmin ? await checkAdmin(supabase) : false;
-    if ((adminIdentifier || adminPassword) && !isAdmin) {
+    const adminCheck = useStoredAdmin ? await checkAdmin(supabase) : false;
+    isAdmin = adminCheck === true || adminCheck === null;
+    if (useStoredAdmin && adminCheck === false) {
       if (!clientMode) {
         clearAdminCredentials();
         supabase = createSupabaseClient("", "");
@@ -57,19 +59,27 @@ async function init() {
       if (document.visibilityState !== "visible") return;
       await loadCloudPhotos();
       render();
-    }, 10000);
+    }, 3000);
   }
 }
 
 function bindEvents() {
   if (!clientMode) {
-    $("adminButton").onclick = () => { showAdminState(); dialog.showModal(); };
+    $("adminButton").onclick = async () => {
+      if (cloudEnabled && isAdmin) {
+        await loadCloudPhotos();
+        render();
+      }
+      showAdminState();
+      dialog.showModal();
+    };
     $("closeDialog").onclick = () => dialog.close();
     dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
     $("logoutButton").onclick = logout;
     $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
     $("adminLoginForm").onsubmit = loginAdmin;
     $("uploadForm").onsubmit = upload;
+    $("addFilesInput").onchange = uploadAdditionalFiles;
   }
   $("searchInput").oninput = render;
   $("filters").onclick = (e) => {
@@ -121,13 +131,16 @@ async function loginAdmin(e) {
   }
   localStorage.setItem("polaroid-admin-identifier", identifier);
   localStorage.setItem("polaroid-admin-password", password);
+  writeCookie("polaroid-admin-identifier", identifier);
+  writeCookie("polaroid-admin-password", password);
   location.reload();
 }
 
 async function checkAdmin(client = supabase) {
   if (!client) return false;
   const { data, error } = await client.rpc("is_admin_request");
-  return !error && data === true;
+  if (error) return null;
+  return data === true;
 }
 
 async function logout() {
@@ -138,8 +151,24 @@ async function logout() {
 function clearAdminCredentials() {
   localStorage.removeItem("polaroid-admin-identifier");
   localStorage.removeItem("polaroid-admin-password");
+  deleteCookie("polaroid-admin-identifier");
+  deleteCookie("polaroid-admin-password");
   adminIdentifier = "";
   adminPassword = "";
+}
+
+function readCookie(name) {
+  const prefix = `${name}=`;
+  const item = document.cookie.split("; ").find(value => value.startsWith(prefix));
+  return item ? decodeURIComponent(item.slice(prefix.length)) : "";
+}
+
+function writeCookie(name, value) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=31536000; Path=/; SameSite=Lax; Secure`;
+}
+
+function deleteCookie(name) {
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
 }
 
 async function loadCloudPhotos() {
@@ -186,30 +215,51 @@ async function upload(e) {
   }
 }
 
-async function uploadCloud(files, eventCode) {
+async function uploadCloud(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value) {
   for (const file of files) {
     const safeName = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const { error: storageError } = await supabase.storage.from("photos").upload(safeName, file);
     if (storageError) throw storageError;
-    const { error: dbError } = await supabase.from("photos").insert({ event_name: $("eventInput").value, event_date: $("dateInput").value, event_code: eventCode, storage_path: safeName });
+    const { error: dbError } = await supabase.from("photos").insert({ event_name: eventName, event_date: eventDate, event_code: eventCode, storage_path: safeName });
     if (dbError) throw dbError;
   }
   await loadCloudPhotos();
 }
 
-async function uploadLocal(files, eventCode) {
+async function uploadLocal(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value) {
   if (photos.every(p => p.sample)) photos = [];
   for (const file of files) {
     const item = {
       id: crypto.randomUUID(),
-      event: $("eventInput").value,
+      event: eventName,
       eventCode,
-      date: $("dateInput").value,
+      date: eventDate,
       blob: file,
       name: file.name
     };
     await saveLocalPhoto(item);
     photos.unshift({ ...item, url: URL.createObjectURL(file) });
+  }
+}
+
+async function uploadAdditionalFiles(e) {
+  const files = [...e.target.files];
+  const eventPhoto = photos.find(photo => photo.eventCode === pendingEventCode);
+  e.target.value = "";
+  if (!files.length || !eventPhoto) return;
+  toast(`Aggiunta di ${files.length} foto in corso…`);
+  try {
+    if (cloudEnabled) {
+      await uploadCloud(files, pendingEventCode, eventPhoto.event, eventPhoto.date);
+    } else {
+      await uploadLocal(files, pendingEventCode, eventPhoto.event, eventPhoto.date);
+    }
+    render();
+    toast(`${files.length} foto aggiunte a ${eventPhoto.event}`);
+  } catch (error) {
+    toast(error.message || "Aggiunta delle foto non riuscita");
+  } finally {
+    pendingEventCode = "";
   }
 }
 
@@ -261,8 +311,9 @@ function renderEventLinks() {
   if (!container || !isAdmin) return;
   const boxes = new Map();
   photos.filter(p => !p.sample && p.eventCode).forEach(p => {
-    if (!boxes.has(p.eventCode)) boxes.set(p.eventCode, { name: p.event, date: p.date, count: 0 });
+    if (!boxes.has(p.eventCode)) boxes.set(p.eventCode, { name: p.event, date: p.date, count: 0, downloads: 0 });
     boxes.get(p.eventCode).count += 1;
+    boxes.get(p.eventCode).downloads += p.downloads || 0;
   });
   if (!boxes.size) {
     container.innerHTML = `<p class="no-events">Crea la prima box caricando le fotografie.</p>`;
@@ -272,9 +323,10 @@ function renderEventLinks() {
     <article class="event-link-card">
       <div>
         <strong>${escapeHtml(box.name)}</strong>
-        <small>${formatDate(box.date)} · ${box.count} foto</small>
+        <small>${formatDate(box.date)} · ${box.count} foto · ${box.downloads} download</small>
       </div>
       <div class="event-actions">
+        <button type="button" data-add-event="${code}">Aggiungi foto</button>
         <button type="button" data-copy-event="${code}">Copia link</button>
         <a href="${buildEventLink(code)}" target="_blank" aria-label="Apri box">↗</a>
       </div>
@@ -282,6 +334,12 @@ function renderEventLinks() {
   `).join("");
   container.querySelectorAll("[data-copy-event]").forEach(button => {
     button.onclick = () => copyEventLink(buildEventLink(button.dataset.copyEvent));
+  });
+  container.querySelectorAll("[data-add-event]").forEach(button => {
+    button.onclick = () => {
+      pendingEventCode = button.dataset.addEvent;
+      $("addFilesInput").click();
+    };
   });
 }
 
@@ -313,17 +371,16 @@ function slugify(value) {
 async function downloadPhoto(id) {
   const p = photos.find(x => x.id === id);
   if (!p) return;
+  await recordDownload(p);
   try {
     const response = await fetch(p.url);
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `${p.event.replace(/\s+/g, "-")}-${p.date}.jpg`; a.click();
     URL.revokeObjectURL(url);
-    await recordDownload(p);
     toast("Download avviato");
   } catch {
     window.open(p.url, "_blank");
-    await recordDownload(p);
   }
 }
 
