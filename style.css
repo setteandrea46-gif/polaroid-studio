@@ -61,7 +61,7 @@ h1 em { color: var(--rust); }
 .client-view .gallery-section { min-height: 100vh; padding-top: 28px; }
 .client-view .client-gallery-head { display: flex !important; }
 .client-view .polaroid { padding-bottom: 8px; }
-.client-photo-info { justify-content: flex-end; padding: 10px 2px 1px; }
+.photo-info.client-photo-info { justify-content: flex-end; padding: 10px 2px 1px; }
 .section-head { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 36px; }
 .section-head h2, dialog h2 { font-size: clamp(40px, 5vw, 67px); letter-spacing: -.04em; }
 .search-box { display: flex; gap: 8px; border-bottom: 1px solid var(--ink); padding: 10px 0; min-width: 250px; }
