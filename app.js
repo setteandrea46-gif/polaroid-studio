@@ -12,6 +12,7 @@ let selectedFilter = "Tutti";
 let selectedAdminEventCode = "";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
 const clientMode = Boolean(requestedEventCode);
+const FREE_STORAGE_BYTES = 1024 * 1024 * 1024;
 
 const $ = (id) => document.getElementById(id);
 const grid = $("photoGrid");
@@ -55,6 +56,7 @@ async function init() {
   }
   render();
   bindEvents();
+  if (cloudEnabled && isAdmin) await updateStorageUsage();
   if (cloudEnabled && isAdmin) {
     setInterval(async () => {
       if (document.visibilityState !== "visible") return;
@@ -194,6 +196,46 @@ async function loadCloudPhotos() {
   }));
 }
 
+async function updateStorageUsage() {
+  if (!cloudEnabled || !supabase || !isAdmin || clientMode) return;
+  const meter = $("storageMeter");
+  meter.classList.remove("hidden");
+  $("storageUsageText").textContent = "Calcolo spazio…";
+  let totalBytes = 0;
+  let offset = 0;
+  const pageSize = 100;
+  while (true) {
+    const { data, error } = await supabase.storage.from("photos").list("", {
+      limit: pageSize,
+      offset,
+      sortBy: { column: "name", order: "asc" }
+    });
+    if (error) {
+      $("storageUsageText").textContent = "Spazio non disponibile";
+      $("storageRemainingText").textContent = "Riprova aggiornando la pagina";
+      return;
+    }
+    (data || []).forEach(file => {
+      totalBytes += Number(file.metadata?.size || 0);
+    });
+    if (!data || data.length < pageSize) break;
+    offset += data.length;
+  }
+  const percent = Math.min(100, (totalBytes / FREE_STORAGE_BYTES) * 100);
+  const remaining = Math.max(0, FREE_STORAGE_BYTES - totalBytes);
+  $("storageUsageText").textContent = `${formatStorageBytes(totalBytes)} di 1 GB in uso (${percent.toFixed(1)}%)`;
+  $("storageRemainingText").textContent = `${formatStorageBytes(remaining)} ancora disponibili`;
+  $("storageBarFill").style.width = `${totalBytes ? Math.max(.5, percent) : 0}%`;
+  meter.classList.toggle("warning", percent >= 85);
+}
+
+function formatStorageBytes(bytes) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 async function upload(e) {
   e.preventDefault();
   const files = [...$("fileInput").files];
@@ -225,6 +267,7 @@ async function uploadCloud(files, eventCode, eventName = $("eventInput").value, 
     if (dbError) throw dbError;
   }
   await loadCloudPhotos();
+  await updateStorageUsage();
 }
 
 async function uploadLocal(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value) {
@@ -272,6 +315,7 @@ async function removePhoto(id) {
     if (error) return toast("Eliminazione non riuscita");
     await supabase.storage.from("photos").remove([photo.path]);
     await loadCloudPhotos();
+    await updateStorageUsage();
   } else {
     photos = photos.filter(p => p.id !== id);
     await deleteLocalPhoto(id);

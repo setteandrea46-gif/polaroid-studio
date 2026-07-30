@@ -25,6 +25,16 @@ button, a { -webkit-tap-highlight-color: transparent; }
   height: 86px; display: flex; align-items: center; justify-content: space-between;
   padding: 0 clamp(24px, 6vw, 90px); border-bottom: 1px solid var(--line); position: relative; z-index: 3;
 }
+.storage-meter { margin: 22px clamp(24px, 6vw, 90px) 0; padding: 22px 24px; border: 1px solid var(--line); border-radius: 22px; background: var(--white); box-shadow: 0 8px 25px rgba(38,31,23,.07); }
+.storage-meter-head, .storage-meter-foot { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
+.storage-meter-head .eyebrow { margin-bottom: 7px; }
+.storage-meter-head strong { font-family: "Playfair Display"; font-size: 25px; }
+.storage-meter-head > span { color: var(--muted); font-size: 13px; }
+.storage-bar { height: 13px; margin: 17px 0 11px; overflow: hidden; border-radius: 30px; background: var(--cream); }
+.storage-bar span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--ink); transition: width .5s ease; }
+.storage-meter.warning .storage-bar span { background: var(--rust); }
+.storage-meter-foot { align-items: center; color: var(--muted); font-size: 11px; }
+.storage-meter-foot small { white-space: nowrap; }
 .brand { color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 700; letter-spacing: .17em; line-height: 1; }
 .brand small { display: block; margin-top: 5px; font-size: 8px; letter-spacing: .32em; color: var(--muted); }
 .brand-mark { width: 37px; height: 37px; display: grid; place-items: center; color: var(--white); background: var(--ink); font-family: "Playfair Display"; font-size: 22px; border-radius: 50% 50% 46% 54%; transform: rotate(-6deg); }
@@ -130,6 +140,9 @@ form input:focus { border-color: var(--rust); }
 
 @media (max-width: 800px) {
   .topbar { height: 70px; padding: 0 18px; }.admin-link { font-size: 0; }.admin-link span { font-size: 20px; }
+  .storage-meter { margin: 14px 14px 0; padding: 18px; border-radius: 18px; }
+  .storage-meter-head { display: block; }.storage-meter-head > span { display: block; margin-top: 10px; }
+  .storage-meter-foot { align-items: start; }.storage-meter-foot span { max-width: 58%; }
   .hero { min-height: 650px; padding-top: 130px; }.hero-copy { font-size: 14px; max-width: 330px; }
   .floating-card { width: 105px; padding: 7px 7px 24px; }.photo-fill { height: 95px; }.card-a { top: 7%; left: -18px; }.card-b { right: -13px; bottom: 9%; }
   .gallery-section { padding: 75px 18px; }.section-head { display: block; }.search-box { margin-top: 28px; width: 100%; }
