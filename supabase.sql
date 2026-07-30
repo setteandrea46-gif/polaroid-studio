@@ -21,10 +21,15 @@ create index if not exists photos_event_code_idx on public.photos(event_code);
 
 create table if not exists public.admin_settings (
   id smallint primary key default 1 check (id = 1),
-  secret_hash bytea not null,
+  username text not null,
+  email text not null,
+  password_hash bytea not null,
   updated_at timestamptz not null default now()
 );
 
+alter table public.admin_settings add column if not exists username text;
+alter table public.admin_settings add column if not exists email text;
+alter table public.admin_settings add column if not exists password_hash bytea;
 alter table public.admin_settings enable row level security;
 revoke all on table public.admin_settings from anon, authenticated;
 
@@ -36,19 +41,22 @@ set search_path = public, extensions
 as $$
 declare
   request_headers jsonb;
-  supplied_key text;
+  supplied_identifier text;
+  supplied_password text;
 begin
   request_headers := coalesce(
     nullif(current_setting('request.headers', true), ''),
     '{}'
   )::jsonb;
-  supplied_key := coalesce(request_headers ->> 'x-polaroid-admin-key', '');
+  supplied_identifier := lower(trim(coalesce(request_headers ->> 'x-polaroid-admin-identifier', '')));
+  supplied_password := coalesce(request_headers ->> 'x-polaroid-admin-password', '');
 
   return exists (
     select 1
     from public.admin_settings
     where id = 1
-      and secret_hash = extensions.digest(supplied_key, 'sha256')
+      and supplied_identifier in (lower(username), lower(email))
+      and password_hash = extensions.digest(supplied_password, 'sha256')
   );
 exception when others then
   return false;
@@ -98,5 +106,5 @@ using (
   and public.is_admin_request()
 );
 
--- La chiave amministratore non va salvata in questo file pubblico.
--- Inserisci soltanto il suo hash SHA-256 nella tabella admin_settings.
+-- Nome utente, e-mail e hash della password vanno inseriti nella tabella
+-- admin_settings dal pannello Supabase, senza pubblicare la password in questo file.

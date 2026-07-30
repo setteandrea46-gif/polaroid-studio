@@ -1,14 +1,11 @@
 const config = window.POLAROID_CONFIG || {};
 const cloudEnabled = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 let supabase = null;
+let supabaseModule = null;
 let isAdmin = false;
-const adminHashParams = new URLSearchParams(location.hash.slice(1));
-const adminKeyFromLink = adminHashParams.get("admin");
-let adminKey = adminKeyFromLink || localStorage.getItem("polaroid-admin-key") || "";
-if (adminKeyFromLink) {
-  localStorage.setItem("polaroid-admin-key", adminKeyFromLink);
-  history.replaceState({}, "", `${location.pathname}${location.search}`);
-}
+let adminIdentifier = localStorage.getItem("polaroid-admin-identifier") || "";
+let adminPassword = localStorage.getItem("polaroid-admin-password") || "";
+localStorage.removeItem("polaroid-admin-key");
 let photos = [];
 let selectedFilter = "Tutti";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
@@ -34,14 +31,12 @@ async function init() {
   $("year").textContent = new Date().getFullYear();
   $("dateInput").valueAsDate = new Date();
   if (cloudEnabled) {
-    const module = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-    supabase = module.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-      global: { headers: adminKey ? { "x-polaroid-admin-key": adminKey } : {} }
-    });
-    isAdmin = adminKey ? await checkAdmin() : false;
-    if (adminKey && !isAdmin) {
-      localStorage.removeItem("polaroid-admin-key");
-      adminKey = "";
+    supabaseModule = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
+    supabase = createSupabaseClient(adminIdentifier, adminPassword);
+    isAdmin = adminIdentifier && adminPassword ? await checkAdmin(supabase) : false;
+    if ((adminIdentifier || adminPassword) && !isAdmin) {
+      clearAdminCredentials();
+      supabase = createSupabaseClient("", "");
     }
     await loadCloudPhotos();
     $("modeNote").textContent = "Modalità online attiva: le foto pubblicate saranno visibili a tutti.";
@@ -52,10 +47,6 @@ async function init() {
   }
   render();
   bindEvents();
-  if (isAdmin && adminKeyFromLink) {
-    showAdminState();
-    dialog.showModal();
-  }
 }
 
 function bindEvents() {
@@ -64,7 +55,7 @@ function bindEvents() {
   dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
   $("logoutButton").onclick = logout;
   $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
-  $("adminCodeForm").onsubmit = activateAdminCode;
+  $("adminLoginForm").onsubmit = loginAdmin;
   $("uploadForm").onsubmit = upload;
   $("searchInput").oninput = render;
   $("filters").onclick = (e) => {
@@ -79,23 +70,57 @@ function showAdminState() {
   $("adminView").classList.toggle("hidden", !isAdmin);
 }
 
-async function activateAdminCode(e) {
+function createSupabaseClient(identifier, password) {
+  const headers = identifier && password ? {
+    "x-polaroid-admin-identifier": identifier,
+    "x-polaroid-admin-password": password
+  } : {};
+  return supabaseModule.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    global: { headers },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
+}
+
+async function loginAdmin(e) {
   e.preventDefault();
-  const code = $("adminCodeInput").value.trim();
-  if (!code) return;
-  localStorage.setItem("polaroid-admin-key", code);
+  const identifier = $("adminIdentifierInput").value.trim();
+  const password = $("adminPasswordInput").value;
+  const message = $("adminLoginMessage");
+  const button = $("adminLoginButton");
+  if (!cloudEnabled || !supabaseModule) {
+    message.textContent = "Collegamento online non disponibile.";
+    return;
+  }
+  button.disabled = true;
+  message.textContent = "Controllo in corso…";
+  const candidateClient = createSupabaseClient(identifier, password);
+  const accepted = await checkAdmin(candidateClient);
+  button.disabled = false;
+  if (!accepted) {
+    message.textContent = "Nome utente, e-mail o password non corretti. Puoi riprovare subito.";
+    return;
+  }
+  localStorage.setItem("polaroid-admin-identifier", identifier);
+  localStorage.setItem("polaroid-admin-password", password);
   location.reload();
 }
 
-async function checkAdmin() {
-  if (!supabase) return false;
-  const { data, error } = await supabase.rpc("is_admin_request");
+async function checkAdmin(client = supabase) {
+  if (!client) return false;
+  const { data, error } = await client.rpc("is_admin_request");
   return !error && data === true;
 }
 
 async function logout() {
-  localStorage.removeItem("polaroid-admin-key");
+  clearAdminCredentials();
   location.reload();
+}
+
+function clearAdminCredentials() {
+  localStorage.removeItem("polaroid-admin-identifier");
+  localStorage.removeItem("polaroid-admin-password");
+  adminIdentifier = "";
+  adminPassword = "";
 }
 
 async function loadCloudPhotos() {
