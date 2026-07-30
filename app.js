@@ -77,7 +77,12 @@ function createSupabaseClient(identifier, password) {
   } : {};
   return supabaseModule.createClient(config.supabaseUrl, config.supabaseAnonKey, {
     global: { headers },
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: identifier && password ? "polaroid-admin-session" : "polaroid-public-session"
+    }
   });
 }
 
