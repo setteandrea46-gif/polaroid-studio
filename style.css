@@ -183,6 +183,7 @@ form input:focus { border-color: var(--rust); }
   .admin-heading .eyebrow { display: none; }.admin-heading h2 { font-size: 31px; line-height: 1; }
   .admin-heading-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 11px; }
   .admin-heading-actions .text-button { width: 100%; padding: 10px 8px; border: 1px solid var(--line); background: var(--cream); }
+  .branding-settings, #uploadForm { scroll-margin-top: 118px; }
   .branding-settings { padding: 18px; }.branding-actions { align-items: stretch; flex-direction: column-reverse; }.branding-actions button { width: 100%; }
   .photo-info h3 { font-size: 14px; }.photo-info p { font-size: 10px; }.download-button { width: 34px; height: 34px; }
   footer { display: grid; gap: 25px; }.form-row { grid-template-columns: 1fr; gap: 0; }
