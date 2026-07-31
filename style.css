@@ -133,6 +133,12 @@ form input:focus { border-color: var(--rust); }
 .admin-heading h2 { font-size: 48px; }
 .upload-zone { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 38px 20px; border: 1px dashed #ad9d8a; background: #faf8f4; cursor: pointer; margin-bottom: 22px; }
 .upload-zone input { display: none; }.upload-icon { font-size: 30px; color: var(--rust); }.upload-zone small { color: var(--muted); margin: 7px 0; }
+.upload-progress { width: min(330px, 100%); margin-top: 15px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); text-align: left; }
+.upload-progress-copy { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 9px; }
+.upload-progress-copy strong { font-size: 12px; }.upload-progress-copy span { color: var(--rust); font-size: 11px; font-weight: 700; }
+.upload-progress-bar { height: 7px; overflow: hidden; border-radius: 20px; background: var(--cream); }
+.upload-progress-bar span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--rust); transition: width .2s ease; }
+.admin-box-toolbar .delete-event-button { margin-left: auto; color: #922; background: #fff4f2; border-color: #d8a7a0; }
 .form-row { display: grid; grid-template-columns: 1.5fr 1fr; gap: 15px; }
 .admin-note { padding: 13px; background: var(--cream); font-size: 11px; color: var(--muted); line-height: 1.5; }
 .inline-copy { border: 0; border-bottom: 1px solid var(--rust); padding: 0; background: transparent; color: var(--rust); cursor: pointer; font-weight: 700; }

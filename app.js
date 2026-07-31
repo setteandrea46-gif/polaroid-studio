@@ -79,7 +79,11 @@ function bindEvents() {
     $("closeDialog").onclick = () => dialog.close();
     dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
     $("logoutButton").onclick = logout;
-    $("fileInput").onchange = (e) => $("fileCount").textContent = e.target.files.length ? `${e.target.files.length} file selezionati` : "";
+    $("fileInput").onchange = (e) => {
+      const count = e.target.files.length;
+      $("fileCount").textContent = count ? `${count} file selezionati` : "";
+      resetUploadProgress();
+    };
     $("adminLoginForm").onsubmit = loginAdmin;
     $("uploadForm").onsubmit = upload;
     $("addFilesInput").onchange = uploadAdditionalFiles;
@@ -242,10 +246,12 @@ async function upload(e) {
   if (!files.length) return;
   const button = $("publishButton");
   button.disabled = true; button.textContent = "Pubblicazione…";
+  updateUploadProgress(0, files.length);
   try {
     const eventCode = createEventCode();
-    if (cloudEnabled) await uploadCloud(files, eventCode);
-    else await uploadLocal(files, eventCode);
+    const showProgress = (current, total) => updateUploadProgress(current, total);
+    if (cloudEnabled) await uploadCloud(files, eventCode, $("eventInput").value, $("dateInput").value, showProgress);
+    else await uploadLocal(files, eventCode, $("eventInput").value, $("dateInput").value, showProgress);
     $("uploadForm").reset(); $("fileCount").textContent = "";
     const eventLink = buildEventLink(eventCode);
     $("uploadMessage").innerHTML = `Box pubblicata. <button class="inline-copy" type="button" id="copyNewLink">Copia il link per il cliente</button>`;
@@ -258,21 +264,41 @@ async function upload(e) {
   }
 }
 
-async function uploadCloud(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value) {
-  for (const file of files) {
+function updateUploadProgress(current, total) {
+  const progress = $("uploadProgress");
+  if (!progress) return;
+  const percent = total ? Math.round((current / total) * 100) : 0;
+  progress.classList.toggle("hidden", !total);
+  $("uploadProgressText").textContent = `Foto ${current} su ${total}`;
+  $("uploadProgressPercent").textContent = `${percent}%`;
+  $("uploadProgressFill").style.width = `${percent}%`;
+}
+
+function resetUploadProgress() {
+  const progress = $("uploadProgress");
+  if (!progress) return;
+  progress.classList.add("hidden");
+  $("uploadProgressText").textContent = "Foto 0 su 0";
+  $("uploadProgressPercent").textContent = "0%";
+  $("uploadProgressFill").style.width = "0%";
+}
+
+async function uploadCloud(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value, onProgress = null) {
+  for (const [index, file] of files.entries()) {
     const safeName = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const { error: storageError } = await supabase.storage.from("photos").upload(safeName, file);
     if (storageError) throw storageError;
     const { error: dbError } = await supabase.from("photos").insert({ event_name: eventName, event_date: eventDate, event_code: eventCode, storage_path: safeName });
     if (dbError) throw dbError;
+    onProgress?.(index + 1, files.length);
   }
   await loadCloudPhotos();
   await updateStorageUsage();
 }
 
-async function uploadLocal(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value) {
+async function uploadLocal(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value, onProgress = null) {
   if (photos.every(p => p.sample)) photos = [];
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     const item = {
       id: crypto.randomUUID(),
       event: eventName,
@@ -283,6 +309,7 @@ async function uploadLocal(files, eventCode, eventName = $("eventInput").value, 
     };
     await saveLocalPhoto(item);
     photos.unshift({ ...item, url: URL.createObjectURL(file) });
+    onProgress?.(index + 1, files.length);
   }
 }
 
@@ -294,9 +321,9 @@ async function uploadAdditionalFiles(e) {
   toast(`Aggiunta di ${files.length} foto in corso…`);
   try {
     if (cloudEnabled) {
-      await uploadCloud(files, pendingEventCode, eventPhoto.event, eventPhoto.date);
+      await uploadCloud(files, pendingEventCode, eventPhoto.event, eventPhoto.date, (current, total) => toast(`Foto ${current} su ${total} aggiunta…`));
     } else {
-      await uploadLocal(files, pendingEventCode, eventPhoto.event, eventPhoto.date);
+      await uploadLocal(files, pendingEventCode, eventPhoto.event, eventPhoto.date, (current, total) => toast(`Foto ${current} su ${total} aggiunta…`));
     }
     render();
     toast(`${files.length} foto aggiunte a ${eventPhoto.event}`);
@@ -321,6 +348,35 @@ async function removePhoto(id) {
     await deleteLocalPhoto(id);
   }
   render(); toast("Fotografia eliminata");
+}
+
+async function removeEventBox(eventCode) {
+  const eventPhotos = photos.filter(photo => photo.eventCode === eventCode && !photo.sample);
+  if (!eventPhotos.length) return;
+  const eventName = eventPhotos[0].event;
+  const confirmed = confirm(`Vuoi eliminare definitivamente la box "${eventName}" e tutte le sue ${eventPhotos.length} foto?`);
+  if (!confirmed) return;
+  try {
+    if (cloudEnabled) {
+      const paths = eventPhotos.map(photo => photo.path).filter(Boolean);
+      for (let index = 0; index < paths.length; index += 100) {
+        const { error: storageError } = await supabase.storage.from("photos").remove(paths.slice(index, index + 100));
+        if (storageError) throw storageError;
+      }
+      const { error: databaseError } = await supabase.from("photos").delete().eq("event_code", eventCode);
+      if (databaseError) throw databaseError;
+      await loadCloudPhotos();
+      await updateStorageUsage();
+    } else {
+      for (const photo of eventPhotos) await deleteLocalPhoto(photo.id);
+      photos = photos.filter(photo => photo.eventCode !== eventCode);
+    }
+    selectedAdminEventCode = "";
+    render();
+    toast(`Box "${eventName}" eliminata`);
+  } catch (error) {
+    toast(error.message || "Eliminazione della box non riuscita");
+  }
 }
 
 function render() {
@@ -413,6 +469,7 @@ function renderAdminArchive(query) {
       <button type="button" id="backToBoxes">← Tutte le box</button>
       <button type="button" id="addToOpenBox">＋ Aggiungi foto</button>
       <button type="button" id="copyOpenBoxLink">Copia link cliente</button>
+      <button type="button" class="delete-event-button" id="deleteOpenBox">Elimina intera box</button>
     `;
     grid.classList.remove("admin-box-grid");
     grid.innerHTML = photoCardsMarkup(eventPhotos);
@@ -427,6 +484,7 @@ function renderAdminArchive(query) {
       $("addFilesInput").click();
     };
     $("copyOpenBoxLink").onclick = () => copyEventLink(buildEventLink(selectedAdminEventCode));
+    $("deleteOpenBox").onclick = () => removeEventBox(selectedAdminEventCode);
     return;
   }
 
