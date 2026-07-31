@@ -13,6 +13,11 @@ let selectedAdminEventCode = "";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
 const clientMode = Boolean(requestedEventCode);
 const FREE_STORAGE_BYTES = 1024 * 1024 * 1024;
+const BRANDING_SETTINGS_PATH = "branding/settings.json";
+const DEFAULT_BRANDING = { companyName: "Polaroid Studio", logoPath: "" };
+let branding = { ...DEFAULT_BRANDING, logoUrl: "" };
+let brandingPreviewUrl = "";
+let removeBrandLogo = false;
 
 const $ = (id) => document.getElementById(id);
 const grid = $("photoGrid");
@@ -54,6 +59,7 @@ async function init() {
     if (!photos.length) photos = samples;
     $("modeNote").textContent = "Per proteggere l’area amministratore e condividere i link evento, completa il collegamento sicuro a Supabase.";
   }
+  await loadBranding();
   render();
   bindEvents();
   if (cloudEnabled && isAdmin) await updateStorageUsage();
@@ -79,6 +85,12 @@ function bindEvents() {
     $("closeDialog").onclick = () => dialog.close();
     dialog.onclick = (e) => { if (e.target === dialog) dialog.close(); };
     $("logoutButton").onclick = logout;
+    $("settingsButton").onclick = openBrandingSettings;
+    $("closeSettingsButton").onclick = closeBrandingSettings;
+    $("brandingForm").onsubmit = saveBranding;
+    $("companyNameInput").oninput = renderBrandingPreview;
+    $("companyLogoInput").onchange = selectBrandingLogo;
+    $("removeLogoButton").onclick = removeBrandingLogo;
     $("fileInput").onchange = (e) => {
       const count = e.target.files.length;
       $("fileCount").textContent = count ? `${count} file selezionati` : "";
@@ -240,6 +252,170 @@ function formatStorageBytes(bytes) {
   return `${bytes} B`;
 }
 
+function publicPhotoUrl(path) {
+  const encodedPath = String(path).split("/").map(encodeURIComponent).join("/");
+  return `${config.supabaseUrl}/storage/v1/object/public/photos/${encodedPath}`;
+}
+
+async function loadBranding() {
+  let saved = null;
+  if (cloudEnabled) {
+    try {
+      const response = await fetch(`${publicPhotoUrl(BRANDING_SETTINGS_PATH)}?v=${Date.now()}`, { cache: "no-store" });
+      if (response.ok) saved = await response.json();
+    } catch {
+      saved = null;
+    }
+  } else {
+    try {
+      saved = JSON.parse(localStorage.getItem("polaroid-branding") || "null");
+    } catch {
+      saved = null;
+    }
+  }
+  const companyName = String(saved?.companyName || DEFAULT_BRANDING.companyName).trim().slice(0, 60);
+  const logoPath = String(saved?.logoPath || "");
+  branding = {
+    companyName: companyName || DEFAULT_BRANDING.companyName,
+    logoPath,
+    logoUrl: cloudEnabled && logoPath ? `${publicPhotoUrl(logoPath)}?v=${Date.now()}` : String(saved?.logoUrl || "")
+  };
+  applyBranding();
+}
+
+function applyBranding() {
+  const initial = branding.companyName.trim().charAt(0).toUpperCase() || "P";
+  document.querySelectorAll("[data-brand-name]").forEach(element => { element.textContent = branding.companyName; });
+  document.querySelectorAll("[data-brand-mark]").forEach(mark => {
+    const logo = mark.querySelector("[data-brand-logo]");
+    const fallback = mark.querySelector("[data-brand-initial]");
+    mark.classList.toggle("has-logo", Boolean(branding.logoUrl));
+    logo.classList.toggle("hidden", !branding.logoUrl);
+    logo.src = branding.logoUrl || "";
+    logo.alt = branding.logoUrl ? `Logo ${branding.companyName}` : "";
+    fallback.classList.toggle("hidden", Boolean(branding.logoUrl));
+    fallback.textContent = initial;
+  });
+  if ($("homeBrand")) $("homeBrand").setAttribute("aria-label", `${branding.companyName}, home`);
+  if (!clientMode) document.title = `${branding.companyName} — I tuoi ricordi`;
+}
+
+function openBrandingSettings() {
+  removeBrandLogo = false;
+  $("companyLogoInput").value = "";
+  $("companyNameInput").value = branding.companyName;
+  $("brandingMessage").textContent = "";
+  $("brandingSettings").classList.remove("hidden");
+  renderBrandingPreview();
+}
+
+function closeBrandingSettings() {
+  $("brandingSettings").classList.add("hidden");
+  if (brandingPreviewUrl) URL.revokeObjectURL(brandingPreviewUrl);
+  brandingPreviewUrl = "";
+}
+
+function selectBrandingLogo(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    e.target.value = "";
+    $("brandingMessage").textContent = "Scegli un file immagine.";
+    return;
+  }
+  if (brandingPreviewUrl) URL.revokeObjectURL(brandingPreviewUrl);
+  brandingPreviewUrl = URL.createObjectURL(file);
+  removeBrandLogo = false;
+  $("brandingMessage").textContent = "";
+  renderBrandingPreview();
+}
+
+function removeBrandingLogo() {
+  removeBrandLogo = true;
+  $("companyLogoInput").value = "";
+  if (brandingPreviewUrl) URL.revokeObjectURL(brandingPreviewUrl);
+  brandingPreviewUrl = "";
+  renderBrandingPreview();
+}
+
+function renderBrandingPreview() {
+  const name = $("companyNameInput").value.trim() || DEFAULT_BRANDING.companyName;
+  const logoUrl = removeBrandLogo ? "" : (brandingPreviewUrl || branding.logoUrl);
+  const mark = $("brandingPreviewMark");
+  const logo = $("brandingPreviewLogo");
+  const initial = $("brandingPreviewInitial");
+  $("brandingPreviewName").textContent = name;
+  mark.classList.toggle("has-logo", Boolean(logoUrl));
+  logo.classList.toggle("hidden", !logoUrl);
+  logo.src = logoUrl || "";
+  initial.classList.toggle("hidden", Boolean(logoUrl));
+  initial.textContent = name.charAt(0).toUpperCase() || "P";
+}
+
+async function saveBranding(e) {
+  e.preventDefault();
+  const companyName = $("companyNameInput").value.trim();
+  const logoFile = $("companyLogoInput").files[0];
+  const button = $("saveBrandingButton");
+  const message = $("brandingMessage");
+  if (!companyName) return;
+  let uploadedLogoPath = "";
+  button.disabled = true;
+  button.textContent = "Salvataggio…";
+  message.textContent = "";
+  try {
+    let logoPath = removeBrandLogo ? "" : branding.logoPath;
+    if (cloudEnabled && logoFile) {
+      const safeName = logoFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      uploadedLogoPath = `branding/logo-${crypto.randomUUID()}-${safeName}`;
+      const { error: logoError } = await supabase.storage.from("photos").upload(uploadedLogoPath, logoFile, {
+        contentType: logoFile.type || "application/octet-stream",
+        cacheControl: "3600"
+      });
+      if (logoError) throw logoError;
+      logoPath = uploadedLogoPath;
+    }
+    const nextBranding = { companyName: companyName.slice(0, 60), logoPath };
+    if (cloudEnabled) {
+      const settingsFile = new Blob([JSON.stringify(nextBranding)], { type: "application/json" });
+      await supabase.storage.from("photos").remove([BRANDING_SETTINGS_PATH]);
+      const { error: settingsError } = await supabase.storage.from("photos").upload(BRANDING_SETTINGS_PATH, settingsFile, {
+        contentType: "application/json",
+        cacheControl: "0"
+      });
+      if (settingsError) throw settingsError;
+      const previousLogoPath = branding.logoPath;
+      branding = { ...nextBranding, logoUrl: logoPath ? `${publicPhotoUrl(logoPath)}?v=${Date.now()}` : "" };
+      if (previousLogoPath && previousLogoPath !== logoPath) await supabase.storage.from("photos").remove([previousLogoPath]);
+    } else {
+      const logoUrl = logoFile ? await fileToDataUrl(logoFile) : (removeBrandLogo ? "" : branding.logoUrl);
+      branding = { ...nextBranding, logoUrl };
+      localStorage.setItem("polaroid-branding", JSON.stringify(branding));
+    }
+    removeBrandLogo = false;
+    $("companyLogoInput").value = "";
+    applyBranding();
+    renderBrandingPreview();
+    message.textContent = "Impostazioni salvate e visibili ai clienti.";
+    toast("Nome e logo aggiornati");
+  } catch (error) {
+    if (cloudEnabled && uploadedLogoPath) await supabase.storage.from("photos").remove([uploadedLogoPath]);
+    message.textContent = error.message || "Salvataggio non riuscito.";
+  } finally {
+    button.disabled = false;
+    button.textContent = "Salva impostazioni";
+  }
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 async function upload(e) {
   e.preventDefault();
   const files = [...$("fileInput").files];
@@ -391,7 +567,7 @@ function render() {
     $("clientGalleryHead").classList.remove("hidden");
     $("clientTopAd").classList.remove("hidden");
     $("clientEventName").textContent = allowedPhotos[0]?.event || "Le tue fotografie";
-    document.title = `${allowedPhotos[0]?.event || "Galleria evento"} — Polaroid Studio`;
+    document.title = `${allowedPhotos[0]?.event || "Galleria evento"} — ${branding.companyName}`;
   }
   const events = [...new Set(allowedPhotos.map(p => p.event))];
   $("filters").innerHTML = ["Tutti", ...events].map(x => `<button class="${x === selectedFilter ? "active" : ""}" data-filter="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join("");

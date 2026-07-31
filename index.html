@@ -11,15 +11,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <script>if (new URLSearchParams(location.search).has("evento")) document.body.classList.add("client-view");</script>
   <div class="grain"></div>
   <header class="topbar">
-    <a class="brand" href="#" aria-label="Polaroid Studio, home">
-      <span class="brand-mark">P</span>
-      <span>POLAROID <small>STUDIO</small></span>
+    <a class="brand" href="#" id="homeBrand" aria-label="Polaroid Studio, home">
+      <span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span>
+      <span class="brand-name" data-brand-name>Polaroid Studio</span>
     </a>
     <button class="admin-link" id="adminButton">Area amministratore <span>→</span></button>
   </header>
@@ -52,8 +52,8 @@
     <section class="gallery-section" id="galleria">
       <div class="client-gallery-head hidden" id="clientGalleryHead">
         <div class="brand">
-          <span class="brand-mark">P</span>
-          <span>POLAROID <small>STUDIO</small></span>
+          <span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span>
+          <span class="brand-name" data-brand-name>Polaroid Studio</span>
         </div>
         <div class="client-event-meta">
           <small>GALLERIA EVENTO</small>
@@ -88,9 +88,9 @@
   </main>
 
   <footer>
-    <div class="brand footer-brand"><span class="brand-mark">P</span><span>POLAROID <small>STUDIO</small></span></div>
+    <div class="brand footer-brand"><span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span><span class="brand-name" data-brand-name>Polaroid Studio</span></div>
     <p>Ricordi autentici, da portare sempre con te.</p>
-    <p>© <span id="year"></span> Polaroid Studio</p>
+    <p>© <span id="year"></span> <span data-brand-name>Polaroid Studio</span></p>
   </footer>
 
   <dialog id="adminDialog">
@@ -110,8 +110,33 @@
     <div class="hidden" id="adminView">
       <div class="admin-heading">
         <div><p class="eyebrow">PANNELLO ADMIN</p><h2>Pubblica foto</h2></div>
-        <button class="text-button" id="logoutButton">Esci</button>
+        <div class="admin-heading-actions">
+          <button class="text-button" id="settingsButton" type="button">Impostazioni</button>
+          <button class="text-button" id="logoutButton">Esci</button>
+        </div>
       </div>
+      <section class="branding-settings hidden" id="brandingSettings">
+        <div class="branding-settings-head">
+          <div><p class="eyebrow">PERSONALIZZA</p><h3>Nome e logo</h3></div>
+          <button class="text-button" id="closeSettingsButton" type="button">Chiudi</button>
+        </div>
+        <form id="brandingForm">
+          <label>Nome dell’azienda<input id="companyNameInput" maxlength="60" placeholder="Es. Andrea Foto" required></label>
+          <label class="logo-upload">Logo dell’azienda
+            <input id="companyLogoInput" type="file" accept="image/*">
+            <small>PNG, JPG, WebP, GIF o qualsiasi immagine leggibile dal browser.</small>
+          </label>
+          <div class="branding-preview">
+            <span class="brand-mark" id="brandingPreviewMark"><img class="brand-logo hidden" id="brandingPreviewLogo" alt="Anteprima logo"><span id="brandingPreviewInitial">P</span></span>
+            <strong id="brandingPreviewName">Polaroid Studio</strong>
+          </div>
+          <div class="branding-actions">
+            <button class="text-button" id="removeLogoButton" type="button">Rimuovi logo</button>
+            <button class="primary-button" id="saveBrandingButton" type="submit">Salva impostazioni</button>
+          </div>
+          <p class="form-message" id="brandingMessage"></p>
+        </form>
+      </section>
       <form id="uploadForm">
         <label class="upload-zone" id="uploadZone">
           <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple required>
@@ -151,6 +176,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=15"></script>
+  <script type="module" src="app.js?v=16"></script>
 </body>
 </html>
