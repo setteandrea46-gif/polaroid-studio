@@ -14,7 +14,6 @@ const requestedEventCode = new URLSearchParams(location.search).get("evento");
 const clientMode = Boolean(requestedEventCode);
 const FREE_STORAGE_BYTES = 1024 * 1024 * 1024;
 const BRANDING_SETTINGS_PATH = "branding/settings.json";
-const VISITOR_STORAGE_KEY = "polaroid-visitor-id";
 const DEFAULT_BRANDING = { companyName: "Polaroid Studio", logoPath: "" };
 let branding = { ...DEFAULT_BRANDING, logoUrl: "" };
 let brandingPreviewUrl = "";
@@ -269,14 +268,9 @@ async function loadAdminStats() {
 
 async function recordGalleryVisit() {
   if (!clientMode || !requestedEventCode || !supabase) return;
-  let visitorId = localStorage.getItem(VISITOR_STORAGE_KEY);
-  if (!visitorId || !/^[0-9a-f-]{36}$/i.test(visitorId)) {
-    visitorId = crypto.randomUUID();
-    localStorage.setItem(VISITOR_STORAGE_KEY, visitorId);
-  }
   await supabase.rpc("record_gallery_visit", {
     target_event_code: requestedEventCode,
-    target_visitor_key: visitorId
+    target_visitor_key: crypto.randomUUID()
   });
 }
 
