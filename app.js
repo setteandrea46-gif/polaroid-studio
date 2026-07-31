@@ -307,12 +307,14 @@ function openBrandingSettings() {
   $("brandingMessage").textContent = "";
   $("brandingSettings").classList.remove("hidden");
   renderBrandingPreview();
+  requestAnimationFrame(() => $("brandingSettings").scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
 function closeBrandingSettings() {
   $("brandingSettings").classList.add("hidden");
   if (brandingPreviewUrl) URL.revokeObjectURL(brandingPreviewUrl);
   brandingPreviewUrl = "";
+  requestAnimationFrame(() => $("uploadForm").scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
 function selectBrandingLogo(e) {
