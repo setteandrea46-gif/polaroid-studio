@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f4efe7">
   <meta name="description" content="Galleria fotografica Polaroid: guarda e scarica i tuoi ricordi.">
+  <link rel="canonical" href="https://setteandrea46-gif.github.io/polaroid-studio/">
   <meta name="google-adsense-account" content="ca-pub-3384320882560082">
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3384320882560082" crossorigin="anonymous"></script>
   <title>Polaroid Studio — I tuoi ricordi</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
   <script>if (new URLSearchParams(location.search).has("evento")) document.body.classList.add("client-view");</script>
@@ -44,7 +45,7 @@
       <p class="eyebrow">FOTOGRAFIE DA RIVIVERE</p>
       <h1>I tuoi momenti,<br><em>per sempre.</em></h1>
       <p class="hero-copy">Trova le fotografie del tuo evento, custodisci i ricordi più belli e scaricali in alta qualità.</p>
-      <a class="primary-button" href="#galleria">Scopri la galleria <span>↓</span></a>
+      <a class="primary-button" href="#come-funziona">Come funziona <span>↓</span></a>
       <div class="floating-card card-a"><div class="photo-fill sunset"></div><span>estate '26</span></div>
       <div class="floating-card card-b"><div class="photo-fill party"></div><span>noi ♡</span></div>
     </section>
@@ -60,11 +61,6 @@
           <strong id="clientEventName">Le tue fotografie</strong>
         </div>
       </div>
-      <aside class="client-ad-banner hidden" id="clientTopAd" aria-label="Pubblicità">
-        <small>PUBBLICITÀ</small>
-        <strong>Spazio pubblicitario</strong>
-        <span>Il banner Google AdSense apparirà qui</span>
-      </aside>
       <div class="section-head">
         <div>
           <p class="eyebrow" id="galleryEyebrow">LA TUA GALLERIA</p>
@@ -85,11 +81,51 @@
         <p>Le nuove fotografie appariranno qui.</p>
       </div>
     </section>
+
+    <section class="publisher-content" aria-label="Informazioni sul servizio fotografico">
+      <div class="publisher-intro">
+        <p class="eyebrow">GALLERIE FOTOGRAFICHE PRIVATE</p>
+        <h2>Le fotografie del tuo evento, semplici da ritrovare.</h2>
+        <p>Questo sito permette allo studio fotografico di consegnare in modo ordinato le immagini realizzate durante matrimoni, feste, cerimonie ed eventi aziendali. Ogni raccolta viene pubblicata in una galleria dedicata e il cliente riceve il collegamento del proprio evento.</p>
+        <p>La pagina della galleria mostra le fotografie disponibili e consente di scaricarle direttamente sul telefono o sul computer. Non è necessario creare un account cliente: basta utilizzare il link ricevuto dal fotografo.</p>
+      </div>
+
+      <div class="publisher-steps" id="come-funziona">
+        <article><span>01</span><h3>Ricevi il link</h3><p>Dopo la pubblicazione, il fotografo invia il collegamento riservato alla galleria dell’evento.</p></article>
+        <article><span>02</span><h3>Scegli le foto</h3><p>Apri la raccolta da smartphone, tablet o computer e guarda con calma tutte le immagini disponibili.</p></article>
+        <article><span>03</span><h3>Scarica i ricordi</h3><p>Premi il pulsante di download sotto ogni fotografia per conservarne una copia sul tuo dispositivo.</p></article>
+      </div>
+
+      <div class="publisher-details">
+        <div>
+          <p class="eyebrow">UN SERVIZIO PENSATO PER GLI EVENTI</p>
+          <h2>Consegna digitale chiara e veloce.</h2>
+        </div>
+        <div class="publisher-copy">
+          <p>Le gallerie sono organizzate per nome e data dell’evento, così ogni cliente vede esclusivamente la raccolta associata al link ricevuto. Il fotografo può aggiornare la raccolta aggiungendo nuove immagini anche dopo la prima pubblicazione.</p>
+          <p>Le fotografie restano disponibili per il periodo concordato con lo studio. È consigliato scaricare e conservare una copia personale dei file. La qualità visualizzata può dipendere dalla connessione internet e dalle impostazioni del dispositivo.</p>
+        </div>
+      </div>
+
+      <div class="publisher-faq" id="domande-frequenti">
+        <p class="eyebrow">DOMANDE FREQUENTI</p>
+        <h2>Prima di scaricare.</h2>
+        <details><summary>Devo registrarmi per vedere le fotografie?</summary><p>No. Il cliente accede usando il collegamento specifico dell’evento inviato dal fotografo.</p></details>
+        <details><summary>Posso aprire la galleria dal telefono?</summary><p>Sì. Il sito è progettato per funzionare su smartphone, tablet e computer.</p></details>
+        <details><summary>Come salvo una fotografia?</summary><p>Premi “Scarica la tua foto” sotto l’immagine. Il file verrà salvato secondo le impostazioni del browser o del dispositivo.</p></details>
+        <details><summary>Cosa faccio se manca una fotografia?</summary><p>Contatta direttamente lo studio fotografico attraverso il recapito con cui hai ricevuto il link dell’evento.</p></details>
+      </div>
+    </section>
   </main>
 
   <footer>
     <div class="brand footer-brand"><span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span><span class="brand-name" data-brand-name>Polaroid Studio</span></div>
     <p>Ricordi autentici, da portare sempre con te.</p>
+    <nav class="footer-links" aria-label="Informazioni legali">
+      <a href="privacy.html">Privacy</a>
+      <a href="cookie.html">Cookie</a>
+      <a href="contatti.html">Contatti</a>
+    </nav>
     <p>© <span id="year"></span> <span data-brand-name>Polaroid Studio</span></p>
   </footer>
 
@@ -176,6 +212,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=17"></script>
+  <script type="module" src="app.js?v=18"></script>
 </body>
 </html>

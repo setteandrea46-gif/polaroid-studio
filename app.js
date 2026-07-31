@@ -60,6 +60,7 @@ async function init() {
     $("modeNote").textContent = "Per proteggere l’area amministratore e condividere i link evento, completa il collegamento sicuro a Supabase.";
   }
   await loadBranding();
+  document.body.classList.toggle("public-home", !clientMode && !isAdmin);
   render();
   bindEvents();
   if (cloudEnabled && isAdmin) await updateStorageUsage();
@@ -567,7 +568,6 @@ function render() {
   const allowedPhotos = requestedEventCode && !isAdmin ? photos.filter(p => p.eventCode === requestedEventCode) : photos;
   if (clientMode) {
     $("clientGalleryHead").classList.remove("hidden");
-    $("clientTopAd").classList.remove("hidden");
     $("clientEventName").textContent = allowedPhotos[0]?.event || "Le tue fotografie";
     document.title = `${allowedPhotos[0]?.event || "Galleria evento"} — ${branding.companyName}`;
   }
@@ -596,25 +596,6 @@ function photoCardsMarkup(items) {
         </div>
       </div>
     </article>`);
-    if (clientMode && i === 1) {
-      content.push(`
-        <aside class="client-ad-banner client-ad-inline" aria-label="Pubblicità">
-          <small>PUBBLICITÀ</small>
-          <strong>Secondo spazio pubblicitario</strong>
-          <span>Il secondo banner Google AdSense apparirà qui</span>
-        </aside>
-      `);
-    }
-    if (clientMode && (i + 1) % 5 === 0) {
-      content.push(`
-        <aside class="client-mini-ad" aria-label="Pubblicità sponsor">
-          <button type="button" data-close-mini-ad aria-label="Chiudi pubblicità">×</button>
-          <small>PUBBLICITÀ</small>
-          <strong>Spazio per uno sponsor</strong>
-          <span>Questa mini-pubblicità può essere chiusa.</span>
-        </aside>
-      `);
-    }
   });
   return content.join("");
 }
@@ -622,9 +603,6 @@ function photoCardsMarkup(items) {
 function bindPhotoGridActions() {
   grid.querySelectorAll("[data-download]").forEach(b => b.onclick = () => downloadPhoto(b.dataset.download));
   grid.querySelectorAll("[data-delete]").forEach(b => b.onclick = () => removePhoto(b.dataset.delete));
-  grid.querySelectorAll("[data-close-mini-ad]").forEach(button => {
-    button.onclick = () => button.closest(".client-mini-ad")?.remove();
-  });
 }
 
 function renderAdminArchive(query) {

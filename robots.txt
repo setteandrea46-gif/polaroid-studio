@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://setteandrea46-gif.github.io/polaroid-studio/sitemap.xml
