@@ -14,6 +14,7 @@ const requestedEventCode = new URLSearchParams(location.search).get("evento");
 const clientMode = Boolean(requestedEventCode);
 const FREE_STORAGE_BYTES = 1024 * 1024 * 1024;
 const BRANDING_SETTINGS_PATH = "branding/settings.json";
+const VISITOR_STORAGE_KEY = "polaroid-visitor-id";
 const DEFAULT_BRANDING = { companyName: "Polaroid Studio", logoPath: "" };
 let branding = { ...DEFAULT_BRANDING, logoUrl: "" };
 let brandingPreviewUrl = "";
@@ -53,6 +54,7 @@ async function init() {
       }
     }
     await loadCloudPhotos();
+    if (clientMode && photos.length) await recordGalleryVisit();
     $("modeNote").textContent = "Modalità online attiva: le foto pubblicate saranno visibili a tutti.";
   } else {
     photos = await readLocalPhotos();
@@ -63,12 +65,13 @@ async function init() {
   document.body.classList.toggle("public-home", !clientMode && !isAdmin);
   render();
   bindEvents();
-  if (cloudEnabled && isAdmin) await updateStorageUsage();
+  if (cloudEnabled && isAdmin) await updateAdminOverview();
   if (cloudEnabled && isAdmin) {
     setInterval(async () => {
       if (document.visibilityState !== "visible") return;
       await loadCloudPhotos();
       render();
+      await loadAdminStats();
     }, 3000);
   }
 }
@@ -215,8 +218,8 @@ async function loadCloudPhotos() {
 
 async function updateStorageUsage() {
   if (!cloudEnabled || !supabase || !isAdmin || clientMode) return;
+  $("adminOverview").classList.remove("hidden");
   const meter = $("storageMeter");
-  meter.classList.remove("hidden");
   $("storageUsageText").textContent = "Calcolo spazio…";
   let totalBytes = 0;
   let offset = 0;
@@ -244,6 +247,37 @@ async function updateStorageUsage() {
   $("storageRemainingText").textContent = `${formatStorageBytes(remaining)} ancora disponibili`;
   $("storageBarFill").style.width = `${totalBytes ? Math.max(.5, percent) : 0}%`;
   meter.classList.toggle("warning", percent >= 85);
+}
+
+async function updateAdminOverview() {
+  await Promise.all([updateStorageUsage(), loadAdminStats()]);
+}
+
+async function loadAdminStats() {
+  if (!cloudEnabled || !supabase || !isAdmin || clientMode) return;
+  $("adminOverview").classList.remove("hidden");
+  const { data, error } = await supabase.rpc("get_admin_gallery_stats");
+  if (error) {
+    $("audienceUpdateText").textContent = "Statistiche non disponibili";
+    return;
+  }
+  const stats = Array.isArray(data) ? data[0] : data;
+  $("totalVisitors").textContent = Number(stats?.total_visitors || 0).toLocaleString("it-IT");
+  $("totalDownloads").textContent = Number(stats?.total_downloads || 0).toLocaleString("it-IT");
+  $("audienceUpdateText").textContent = "Aggiornato automaticamente";
+}
+
+async function recordGalleryVisit() {
+  if (!clientMode || !requestedEventCode || !supabase) return;
+  let visitorId = localStorage.getItem(VISITOR_STORAGE_KEY);
+  if (!visitorId || !/^[0-9a-f-]{36}$/i.test(visitorId)) {
+    visitorId = crypto.randomUUID();
+    localStorage.setItem(VISITOR_STORAGE_KEY, visitorId);
+  }
+  await supabase.rpc("record_gallery_visit", {
+    target_event_code: requestedEventCode,
+    target_visitor_key: visitorId
+  });
 }
 
 function formatStorageBytes(bytes) {

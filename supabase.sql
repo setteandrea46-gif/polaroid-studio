@@ -94,6 +94,65 @@ $$;
 revoke all on function public.increment_photo_download(uuid, text) from public;
 grant execute on function public.increment_photo_download(uuid, text) to anon, authenticated;
 
+create table if not exists public.event_visits (
+  event_code text not null,
+  visitor_key uuid not null,
+  first_seen_at timestamptz not null default now(),
+  primary key (event_code, visitor_key)
+);
+
+alter table public.event_visits enable row level security;
+revoke all on table public.event_visits from anon, authenticated;
+
+create or replace function public.record_gallery_visit(
+  target_event_code text,
+  target_visitor_key uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from public.photos where event_code = target_event_code
+  ) then
+    return false;
+  end if;
+
+  insert into public.event_visits (event_code, visitor_key)
+  values (target_event_code, target_visitor_key)
+  on conflict (event_code, visitor_key) do nothing;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.record_gallery_visit(text, uuid) from public;
+grant execute on function public.record_gallery_visit(text, uuid) to anon, authenticated;
+
+create or replace function public.get_admin_gallery_stats()
+returns table (total_visitors bigint, total_downloads bigint)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin_request() then
+    return query select 0::bigint, 0::bigint;
+    return;
+  end if;
+
+  return query
+  select
+    (select count(distinct visitor_key)::bigint from public.event_visits),
+    (select coalesce(sum(download_count), 0)::bigint from public.photos);
+end;
+$$;
+
+revoke all on function public.get_admin_gallery_stats() from public;
+grant execute on function public.get_admin_gallery_stats() to anon, authenticated;
+
 alter table public.photos enable row level security;
 
 drop policy if exists "Tutti possono vedere le foto" on public.photos;

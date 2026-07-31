@@ -25,7 +25,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
   height: 86px; display: flex; align-items: center; justify-content: space-between;
   padding: 0 clamp(24px, 6vw, 90px); border-bottom: 1px solid var(--line); position: relative; z-index: 3;
 }
-.storage-meter { margin: 22px clamp(24px, 6vw, 90px) 0; padding: 22px 24px; border: 1px solid var(--line); border-radius: 22px; background: var(--white); box-shadow: 0 8px 25px rgba(38,31,23,.07); }
+.admin-overview { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, .65fr); gap: 16px; margin: 22px clamp(24px, 6vw, 90px) 0; }
+.storage-meter, .audience-meter { padding: 22px 24px; border: 1px solid var(--line); border-radius: 22px; background: var(--white); box-shadow: 0 8px 25px rgba(38,31,23,.07); }
 .storage-meter-head, .storage-meter-foot { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
 .storage-meter-head .eyebrow { margin-bottom: 7px; }
 .storage-meter-head strong { font-family: "Playfair Display"; font-size: 25px; }
@@ -35,6 +36,15 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .storage-meter.warning .storage-bar span { background: var(--rust); }
 .storage-meter-foot { align-items: center; color: var(--muted); font-size: 11px; }
 .storage-meter-foot small { white-space: nowrap; }
+.audience-meter { display: flex; flex-direction: column; justify-content: space-between; background: var(--ink); color: var(--white); }
+.audience-meter .eyebrow { margin-bottom: 7px; color: #df947d; }
+.audience-title { font-family: "Playfair Display"; font-size: 25px; }
+.audience-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+.audience-stats div { padding-right: 10px; border-right: 1px solid rgba(255,255,255,.18); }
+.audience-stats div:last-child { padding-right: 0; border-right: 0; }
+.audience-stats strong, .audience-stats span { display: block; }
+.audience-stats strong { font-family: "Playfair Display"; font-size: clamp(30px, 4vw, 45px); line-height: 1; }
+.audience-stats span, .audience-meter > small { margin-top: 5px; color: #c8c0b5; font-size: 10px; }
 .brand { color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 700; letter-spacing: .17em; line-height: 1; }
 .brand small { display: block; margin-top: 5px; font-size: 8px; letter-spacing: .32em; color: var(--muted); }
 .brand-mark { width: 37px; height: 37px; display: grid; place-items: center; color: var(--white); background: var(--ink); font-family: "Playfair Display"; font-size: 22px; border-radius: 50% 50% 46% 54%; transform: rotate(-6deg); }
@@ -181,7 +191,8 @@ form input:focus { border-color: var(--rust); }
   dialog::backdrop { backdrop-filter: none; }
   .close-button { position: fixed; top: 10px; right: 12px; z-index: 12; width: 40px; height: 40px; padding: 0; border-radius: 50%; background: var(--cream); font-size: 24px; }
   .topbar { height: 70px; padding: 0 18px; }.admin-link { font-size: 0; }.admin-link span { font-size: 20px; }
-  .storage-meter { margin: 14px 14px 0; padding: 18px; border-radius: 18px; }
+  .admin-overview { grid-template-columns: 1fr; margin: 14px 14px 0; gap: 12px; }
+  .storage-meter, .audience-meter { padding: 18px; border-radius: 18px; }
   .storage-meter-head { display: block; }.storage-meter-head > span { display: block; margin-top: 10px; }
   .storage-meter-foot { align-items: start; }.storage-meter-foot span { max-width: 58%; }
   .hero { min-height: 650px; padding-top: 130px; }.hero-copy { font-size: 14px; max-width: 330px; }
