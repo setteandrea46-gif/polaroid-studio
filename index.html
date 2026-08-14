@@ -7,7 +7,8 @@
   <meta name="description" content="Galleria fotografica Polaroid: guarda e scarica i tuoi ricordi.">
   <link rel="canonical" href="https://setteandrea46-gif.github.io/polaroid-studio/">
   <meta name="google-adsense-account" content="ca-pub-3384320882560082">
-  <title>Polaroid Studio — I tuoi ricordi</title>
+  <title>Polaroid</title>
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -17,9 +18,9 @@
   <script>if (new URLSearchParams(location.search).has("evento")) document.body.classList.add("client-view");</script>
   <div class="grain"></div>
   <header class="topbar">
-    <a class="brand" href="#" id="homeBrand" aria-label="Polaroid Studio, home">
+    <a class="brand" href="#" id="homeBrand" aria-label="Polaroid, home">
       <span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span>
-      <span class="brand-name" data-brand-name>Polaroid Studio</span>
+      <span class="brand-name" data-brand-name>Polaroid</span>
     </a>
     <button class="admin-link" id="adminButton">Area amministratore <span>→</span></button>
   </header>
@@ -65,7 +66,7 @@
       <div class="client-gallery-head hidden" id="clientGalleryHead">
         <div class="brand">
           <span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span>
-          <span class="brand-name" data-brand-name>Polaroid Studio</span>
+          <span class="brand-name" data-brand-name>Polaroid</span>
         </div>
         <div class="client-event-meta">
           <small>GALLERIA EVENTO</small>
@@ -130,14 +131,14 @@
   </main>
 
   <footer>
-    <div class="brand footer-brand"><span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span><span class="brand-name" data-brand-name>Polaroid Studio</span></div>
+    <div class="brand footer-brand"><span class="brand-mark" data-brand-mark><img class="brand-logo hidden" data-brand-logo alt=""><span data-brand-initial>P</span></span><span class="brand-name" data-brand-name>Polaroid</span></div>
     <p>Ricordi autentici, da portare sempre con te.</p>
     <nav class="footer-links" aria-label="Informazioni legali">
       <a href="privacy.html">Privacy</a>
       <a href="cookie.html">Cookie</a>
       <a href="contatti.html">Contatti</a>
     </nav>
-    <p>© <span id="year"></span> <span data-brand-name>Polaroid Studio</span></p>
+    <p>© <span id="year"></span> <span data-brand-name>Polaroid</span></p>
   </footer>
 
   <dialog id="adminDialog">
@@ -145,23 +146,51 @@
     <div id="loginView">
       <p class="eyebrow">AREA RISERVATA</p>
       <h2>Accedi.</h2>
-      <p class="dialog-copy">Entra con il nome utente oppure con la tua e-mail. Non serve registrarsi e puoi riprovare subito tutte le volte che vuoi.</p>
+      <p class="dialog-copy">Entra con la tua e-mail e password. La stessa utenza funziona da telefono, tablet e computer.</p>
       <form id="adminLoginForm">
-        <label>Nome utente o e-mail<input id="adminIdentifierInput" autocomplete="username" placeholder="Andrea" required></label>
-        <label>Password<input id="adminPasswordInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" required></label>
+        <label>E-mail<input id="adminIdentifierInput" type="email" autocomplete="email" placeholder="setteandrea46@gmail.com" required></label>
+        <label>Password<input id="adminPasswordInput" type="password" autocomplete="current-password" placeholder="••••" required></label>
         <button class="primary-button wide" id="adminLoginButton" type="submit">Accedi</button>
         <p class="form-message" id="adminLoginMessage"></p>
       </form>
-      <p class="admin-note">Puoi usare il nome utente <strong>Andrea</strong> oppure la tua e-mail.</p>
+      <p class="auth-switch">Non hai ancora un account? <button id="showRegisterButton" type="button">Registrati</button></p>
+    </div>
+    <div class="hidden" id="registerView">
+      <p class="eyebrow">NUOVO ACCOUNT</p>
+      <h2>Registrati.</h2>
+      <p class="dialog-copy">Crea il profilo amministratore. Dopo il primo accesso resterai collegato su questo dispositivo.</p>
+      <form id="adminRegisterForm">
+        <label>Nome utente<input id="registerUsernameInput" autocomplete="username" placeholder="Andrea" required></label>
+        <label>E-mail<input id="registerEmailInput" type="email" autocomplete="email" placeholder="setteandrea46@gmail.com" required></label>
+        <label>Password<input id="registerPasswordInput" type="password" autocomplete="new-password" minlength="4" placeholder="Almeno 4 caratteri" required></label>
+        <button class="primary-button wide" id="adminRegisterButton" type="submit">Crea account</button>
+        <p class="form-message" id="adminRegisterMessage"></p>
+      </form>
+      <p class="auth-switch">Hai già un account? <button id="showLoginButton" type="button">Torna ad Accedi</button></p>
     </div>
     <div class="hidden" id="adminView">
       <div class="admin-heading">
         <div><p class="eyebrow">PANNELLO ADMIN</p><h2>Pubblica foto</h2></div>
         <div class="admin-heading-actions">
+          <button class="text-button" id="profileButton" type="button">Profilo</button>
           <button class="text-button" id="settingsButton" type="button">Impostazioni</button>
           <button class="text-button" id="logoutButton">Esci</button>
         </div>
       </div>
+      <section class="branding-settings hidden" id="profileSettings">
+        <div class="branding-settings-head">
+          <div><p class="eyebrow">IL MIO ACCOUNT</p><h3>Profilo</h3></div>
+          <button class="text-button" id="closeProfileButton" type="button">Chiudi</button>
+        </div>
+        <form id="profileForm">
+          <label>Nome visualizzato<input id="profileDisplayNameInput" maxlength="60" placeholder="Andrea"></label>
+          <label>Nome utente<input id="profileUsernameInput" maxlength="40" required></label>
+          <label>E-mail<input id="profileEmailInput" type="email" required></label>
+          <label>Nuova password <small>(lascia vuoto per non cambiarla)</small><input id="profilePasswordInput" type="password" minlength="4" autocomplete="new-password"></label>
+          <button class="primary-button wide" id="saveProfileButton" type="submit">Salva profilo</button>
+          <p class="form-message" id="profileMessage"></p>
+        </form>
+      </section>
       <section class="branding-settings hidden" id="brandingSettings">
         <div class="branding-settings-head">
           <div><p class="eyebrow">PERSONALIZZA</p><h3>Nome e logo</h3></div>
@@ -175,7 +204,7 @@
           </label>
           <div class="branding-preview">
             <span class="brand-mark" id="brandingPreviewMark"><img class="brand-logo hidden" id="brandingPreviewLogo" alt="Anteprima logo"><span id="brandingPreviewInitial">P</span></span>
-            <strong id="brandingPreviewName">Polaroid Studio</strong>
+            <strong id="brandingPreviewName">Polaroid</strong>
           </div>
           <div class="branding-actions">
             <button class="text-button" id="removeLogoButton" type="button">Rimuovi logo</button>
@@ -223,6 +252,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=21"></script>
+  <script type="module" src="app.js?v=22"></script>
 </body>
 </html>

@@ -1,0 +1,10 @@
+{
+  "name": "Polaroid",
+  "short_name": "Polaroid",
+  "description": "Gallerie fotografiche private per eventi",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4efe7",
+  "theme_color": "#f4efe7",
+  "icons": []
+}

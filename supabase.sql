@@ -36,8 +36,19 @@ create table if not exists public.admin_settings (
 alter table public.admin_settings add column if not exists username text;
 alter table public.admin_settings add column if not exists email text;
 alter table public.admin_settings add column if not exists password_hash bytea;
+alter table public.admin_settings add column if not exists display_name text not null default '';
 alter table public.admin_settings enable row level security;
 revoke all on table public.admin_settings from anon, authenticated;
+
+create table if not exists public.admin_sessions (
+  id uuid primary key default gen_random_uuid(),
+  token_hash bytea not null unique,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '1 year')
+);
+
+alter table public.admin_sessions enable row level security;
+revoke all on table public.admin_sessions from anon, authenticated;
 
 create or replace function public.is_admin_request()
 returns boolean
@@ -47,22 +58,19 @@ set search_path = public, extensions
 as $$
 declare
   request_headers jsonb;
-  supplied_identifier text;
-  supplied_password text;
+  supplied_session text;
 begin
   request_headers := coalesce(
     nullif(current_setting('request.headers', true), ''),
     '{}'
   )::jsonb;
-  supplied_identifier := lower(trim(coalesce(request_headers ->> 'x-polaroid-admin-identifier', '')));
-  supplied_password := coalesce(request_headers ->> 'x-polaroid-admin-password', '');
+  supplied_session := coalesce(request_headers ->> 'x-polaroid-session', '');
 
   return exists (
     select 1
-    from public.admin_settings
-    where id = 1
-      and supplied_identifier in (lower(username), lower(email))
-      and password_hash = extensions.digest(supplied_password, 'sha256')
+    from public.admin_sessions
+    where token_hash = extensions.digest(supplied_session, 'sha256')
+      and expires_at > now()
   );
 exception when others then
   return false;
@@ -71,6 +79,159 @@ $$;
 
 revoke all on function public.is_admin_request() from public;
 grant execute on function public.is_admin_request() to anon, authenticated;
+
+create or replace function public.register_admin_account(
+  supplied_username text,
+  supplied_email text,
+  supplied_password text
+)
+returns table (ok boolean, message text, session_token text)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  clean_username text := trim(coalesce(supplied_username, ''));
+  clean_email text := lower(trim(coalesce(supplied_email, '')));
+  new_token text;
+begin
+  if length(clean_username) < 2 then
+    return query select false, 'Inserisci un nome utente valido.', null::text;
+    return;
+  end if;
+  if position('@' in clean_email) < 2 then
+    return query select false, 'Inserisci un indirizzo e-mail valido.', null::text;
+    return;
+  end if;
+  if length(coalesce(supplied_password, '')) < 4 then
+    return query select false, 'La password deve contenere almeno 4 caratteri.', null::text;
+    return;
+  end if;
+
+  lock table public.admin_settings in exclusive mode;
+  if exists (select 1 from public.admin_settings) then
+    return query select false, 'L’account amministratore esiste già. Torna ad Accedi.', null::text;
+    return;
+  end if;
+
+  insert into public.admin_settings (id, username, email, password_hash, display_name)
+  values (1, clean_username, clean_email, extensions.digest(supplied_password, 'sha256'), clean_username);
+
+  new_token := encode(extensions.gen_random_bytes(32), 'hex');
+  insert into public.admin_sessions (token_hash)
+  values (extensions.digest(new_token, 'sha256'));
+  return query select true, 'Account creato.', new_token;
+end;
+$$;
+
+create or replace function public.login_admin_account(
+  supplied_email text,
+  supplied_password text
+)
+returns table (ok boolean, message text, session_token text)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  clean_identifier text := lower(trim(coalesce(supplied_email, '')));
+  new_token text;
+begin
+  if not exists (
+    select 1 from public.admin_settings
+    where clean_identifier in (lower(email), lower(username))
+      and password_hash = extensions.digest(coalesce(supplied_password, ''), 'sha256')
+  ) then
+    return query select false, 'E-mail o password non corretti.', null::text;
+    return;
+  end if;
+
+  delete from public.admin_sessions where expires_at <= now();
+  new_token := encode(extensions.gen_random_bytes(32), 'hex');
+  insert into public.admin_sessions (token_hash)
+  values (extensions.digest(new_token, 'sha256'));
+  return query select true, 'Accesso effettuato.', new_token;
+end;
+$$;
+
+create or replace function public.get_admin_profile()
+returns table (username text, email text, display_name text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin_request() then return; end if;
+  return query select a.username, a.email, a.display_name from public.admin_settings a where a.id = 1;
+end;
+$$;
+
+create or replace function public.update_admin_profile(
+  new_username text,
+  new_email text,
+  new_display_name text,
+  new_password text default null
+)
+returns table (ok boolean, message text)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  clean_username text := trim(coalesce(new_username, ''));
+  clean_email text := lower(trim(coalesce(new_email, '')));
+begin
+  if not public.is_admin_request() then
+    return query select false, 'Sessione scaduta. Accedi di nuovo.';
+    return;
+  end if;
+  if length(clean_username) < 2 or position('@' in clean_email) < 2 then
+    return query select false, 'Controlla nome utente ed e-mail.';
+    return;
+  end if;
+  if new_password is not null and length(new_password) between 1 and 3 then
+    return query select false, 'La nuova password deve avere almeno 4 caratteri.';
+    return;
+  end if;
+
+  update public.admin_settings
+  set username = clean_username,
+      email = clean_email,
+      display_name = left(trim(coalesce(new_display_name, '')), 60),
+      password_hash = case when coalesce(new_password, '') = '' then password_hash else extensions.digest(new_password, 'sha256') end,
+      updated_at = now()
+  where id = 1;
+  return query select true, 'Profilo aggiornato.';
+end;
+$$;
+
+create or replace function public.logout_admin_session()
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  request_headers jsonb;
+  supplied_session text;
+begin
+  request_headers := coalesce(nullif(current_setting('request.headers', true), ''), '{}')::jsonb;
+  supplied_session := coalesce(request_headers ->> 'x-polaroid-session', '');
+  delete from public.admin_sessions where token_hash = extensions.digest(supplied_session, 'sha256');
+  return true;
+end;
+$$;
+
+revoke all on function public.register_admin_account(text, text, text) from public;
+revoke all on function public.login_admin_account(text, text) from public;
+revoke all on function public.get_admin_profile() from public;
+revoke all on function public.update_admin_profile(text, text, text, text) from public;
+revoke all on function public.logout_admin_session() from public;
+grant execute on function public.register_admin_account(text, text, text) to anon, authenticated;
+grant execute on function public.login_admin_account(text, text) to anon, authenticated;
+grant execute on function public.get_admin_profile() to anon, authenticated;
+grant execute on function public.update_admin_profile(text, text, text, text) to anon, authenticated;
+grant execute on function public.logout_admin_session() to anon, authenticated;
 
 create or replace function public.increment_photo_download(
   target_photo_id uuid,
@@ -293,5 +454,5 @@ using (
   and public.is_admin_request()
 );
 
--- Nome utente, e-mail e hash della password vanno inseriti nella tabella
--- admin_settings dal pannello Supabase, senza pubblicare la password in questo file.
+-- Al primo avvio apri il sito e premi Registrati.
+-- La password non viene mai inserita nel codice pubblico di GitHub.

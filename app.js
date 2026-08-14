@@ -3,10 +3,12 @@ const cloudEnabled = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 let supabase = null;
 let supabaseModule = null;
 let isAdmin = false;
-let adminIdentifier = localStorage.getItem("polaroid-admin-identifier") || readCookie("polaroid-admin-identifier") || "";
-let adminPassword = localStorage.getItem("polaroid-admin-password") || readCookie("polaroid-admin-password") || "";
+let adminSessionToken = localStorage.getItem("polaroid-admin-session-token") || readCookie("polaroid-admin-session-token") || "";
+let adminProfile = null;
 let pendingEventCode = "";
 localStorage.removeItem("polaroid-admin-key");
+localStorage.removeItem("polaroid-admin-identifier");
+localStorage.removeItem("polaroid-admin-password");
 let photos = [];
 let selectedFilter = "Tutti";
 let selectedAdminEventCode = "";
@@ -14,7 +16,7 @@ const requestedEventCode = new URLSearchParams(location.search).get("evento");
 const clientMode = Boolean(requestedEventCode);
 const FREE_STORAGE_BYTES = 1024 * 1024 * 1024;
 const BRANDING_SETTINGS_PATH = "branding/settings.json";
-const DEFAULT_BRANDING = { companyName: "Polaroid Studio", logoPath: "" };
+const DEFAULT_BRANDING = { companyName: "Polaroid", logoPath: "" };
 let branding = { ...DEFAULT_BRANDING, logoUrl: "" };
 let brandingPreviewUrl = "";
 let removeBrandLogo = false;
@@ -44,16 +46,14 @@ async function init() {
   document.body.classList.toggle("client-view", clientMode);
   if (cloudEnabled) {
     supabaseModule = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-    const useStoredAdmin = !clientMode && adminIdentifier && adminPassword;
-    supabase = createSupabaseClient(useStoredAdmin ? adminIdentifier : "", useStoredAdmin ? adminPassword : "");
-    const adminCheck = useStoredAdmin ? await checkAdmin(supabase) : false;
-    isAdmin = adminCheck === true || adminCheck === null;
-    if (useStoredAdmin && adminCheck === false) {
-      if (!clientMode) {
-        clearAdminCredentials();
-        supabase = createSupabaseClient("", "");
-      }
+    const useStoredSession = !clientMode && Boolean(adminSessionToken);
+    supabase = createSupabaseClient(useStoredSession ? adminSessionToken : "");
+    isAdmin = useStoredSession ? await checkAdmin(supabase) : false;
+    if (useStoredSession && !isAdmin && !clientMode) {
+      clearAdminSession();
+      supabase = createSupabaseClient("");
     }
+    if (isAdmin) await loadAdminProfile();
     await loadCloudPhotos();
     if (clientMode && photos.length) await startGallerySession();
     $("modeNote").textContent = "Modalità online attiva: le foto pubblicate saranno visibili a tutti.";
@@ -102,6 +102,12 @@ function bindEvents() {
       resetUploadProgress();
     };
     $("adminLoginForm").onsubmit = loginAdmin;
+    $("adminRegisterForm").onsubmit = registerAdmin;
+    $("showRegisterButton").onclick = () => showAuthView("register");
+    $("showLoginButton").onclick = () => showAuthView("login");
+    $("profileButton").onclick = openProfileSettings;
+    $("closeProfileButton").onclick = closeProfileSettings;
+    $("profileForm").onsubmit = saveAdminProfile;
     $("uploadForm").onsubmit = upload;
     $("addFilesInput").onchange = uploadAdditionalFiles;
   }
@@ -115,21 +121,26 @@ function bindEvents() {
 
 function showAdminState() {
   $("loginView").classList.toggle("hidden", isAdmin);
+  $("registerView").classList.add("hidden");
   $("adminView").classList.toggle("hidden", !isAdmin);
 }
 
-function createSupabaseClient(identifier, password) {
-  const headers = identifier && password ? {
-    "x-polaroid-admin-identifier": identifier,
-    "x-polaroid-admin-password": password
-  } : {};
+function showAuthView(view) {
+  $("loginView").classList.toggle("hidden", view !== "login");
+  $("registerView").classList.toggle("hidden", view !== "register");
+  $("adminLoginMessage").textContent = "";
+  $("adminRegisterMessage").textContent = "";
+}
+
+function createSupabaseClient(sessionToken = "") {
+  const headers = sessionToken ? { "x-polaroid-session": sessionToken } : {};
   return supabaseModule.createClient(config.supabaseUrl, config.supabaseAnonKey, {
     global: { headers },
     auth: {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
-      storageKey: identifier && password ? "polaroid-admin-session" : "polaroid-public-session"
+      storageKey: sessionToken ? "polaroid-admin-session" : "polaroid-public-session"
     }
   });
 }
@@ -146,17 +157,46 @@ async function loginAdmin(e) {
   }
   button.disabled = true;
   message.textContent = "Controllo in corso…";
-  const candidateClient = createSupabaseClient(identifier, password);
-  const accepted = await checkAdmin(candidateClient);
+  const publicClient = createSupabaseClient("");
+  const { data, error } = await publicClient.rpc("login_admin_account", {
+    supplied_email: identifier,
+    supplied_password: password
+  });
   button.disabled = false;
-  if (!accepted) {
-    message.textContent = "Nome utente, e-mail o password non corretti. Puoi riprovare subito.";
+  if (error) {
+    message.textContent = databaseSetupMessage(error);
     return;
   }
-  localStorage.setItem("polaroid-admin-identifier", identifier);
-  localStorage.setItem("polaroid-admin-password", password);
-  writeCookie("polaroid-admin-identifier", identifier);
-  writeCookie("polaroid-admin-password", password);
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.ok || !result?.session_token) {
+    message.textContent = result?.message || "E-mail o password non corretti. Puoi riprovare subito.";
+    return;
+  }
+  saveAdminSession(result.session_token);
+  location.reload();
+}
+
+async function registerAdmin(e) {
+  e.preventDefault();
+  const username = $("registerUsernameInput").value.trim();
+  const email = $("registerEmailInput").value.trim();
+  const password = $("registerPasswordInput").value;
+  const message = $("adminRegisterMessage");
+  const button = $("adminRegisterButton");
+  if (!cloudEnabled || !supabaseModule) return message.textContent = "Collegamento online non disponibile.";
+  button.disabled = true;
+  message.textContent = "Creazione account in corso…";
+  const publicClient = createSupabaseClient("");
+  const { data, error } = await publicClient.rpc("register_admin_account", {
+    supplied_username: username,
+    supplied_email: email,
+    supplied_password: password
+  });
+  button.disabled = false;
+  if (error) return message.textContent = databaseSetupMessage(error);
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.ok || !result?.session_token) return message.textContent = result?.message || "Registrazione non riuscita.";
+  saveAdminSession(result.session_token);
   location.reload();
 }
 
@@ -168,17 +208,29 @@ async function checkAdmin(client = supabase) {
 }
 
 async function logout() {
-  clearAdminCredentials();
+  if (supabase && adminSessionToken) await supabase.rpc("logout_admin_session");
+  clearAdminSession();
   location.reload();
 }
 
-function clearAdminCredentials() {
-  localStorage.removeItem("polaroid-admin-identifier");
-  localStorage.removeItem("polaroid-admin-password");
-  deleteCookie("polaroid-admin-identifier");
-  deleteCookie("polaroid-admin-password");
-  adminIdentifier = "";
-  adminPassword = "";
+function saveAdminSession(token) {
+  adminSessionToken = token;
+  localStorage.setItem("polaroid-admin-session-token", token);
+  writeCookie("polaroid-admin-session-token", token);
+}
+
+function clearAdminSession() {
+  localStorage.removeItem("polaroid-admin-session-token");
+  deleteCookie("polaroid-admin-session-token");
+  adminSessionToken = "";
+  adminProfile = null;
+}
+
+function databaseSetupMessage(error) {
+  const text = String(error?.message || "");
+  if (/restricted|egress|quota/i.test(text)) return "Archivio online temporaneamente bloccato: collega il nuovo database.";
+  if (/login_admin_account|register_admin_account|schema cache|function/i.test(text)) return "Il nuovo sistema account deve essere attivato nel database.";
+  return "Operazione non riuscita. Controlla i dati e riprova.";
 }
 
 function readCookie(name) {
@@ -337,6 +389,51 @@ function publicPhotoUrl(path) {
   return `${config.supabaseUrl}/storage/v1/object/public/photos/${encodedPath}`;
 }
 
+async function loadAdminProfile() {
+  if (!supabase || !isAdmin) return;
+  const { data, error } = await supabase.rpc("get_admin_profile");
+  if (error) return;
+  adminProfile = Array.isArray(data) ? data[0] : data;
+}
+
+function openProfileSettings() {
+  $("profileDisplayNameInput").value = adminProfile?.display_name || "";
+  $("profileUsernameInput").value = adminProfile?.username || "Andrea";
+  $("profileEmailInput").value = adminProfile?.email || "";
+  $("profilePasswordInput").value = "";
+  $("profileMessage").textContent = "";
+  $("profileSettings").classList.remove("hidden");
+  requestAnimationFrame(() => $("profileSettings").scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+
+function closeProfileSettings() {
+  $("profileSettings").classList.add("hidden");
+  requestAnimationFrame(() => $("uploadForm").scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+
+async function saveAdminProfile(e) {
+  e.preventDefault();
+  const button = $("saveProfileButton");
+  const message = $("profileMessage");
+  button.disabled = true;
+  button.textContent = "Salvataggio…";
+  const { data, error } = await supabase.rpc("update_admin_profile", {
+    new_username: $("profileUsernameInput").value.trim(),
+    new_email: $("profileEmailInput").value.trim(),
+    new_display_name: $("profileDisplayNameInput").value.trim(),
+    new_password: $("profilePasswordInput").value || null
+  });
+  button.disabled = false;
+  button.textContent = "Salva profilo";
+  if (error) return message.textContent = databaseSetupMessage(error);
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.ok) return message.textContent = result?.message || "Profilo non aggiornato.";
+  await loadAdminProfile();
+  $("profilePasswordInput").value = "";
+  message.textContent = "Profilo aggiornato su tutti i dispositivi.";
+  toast("Profilo aggiornato");
+}
+
 async function loadBranding() {
   let saved = null;
   if (cloudEnabled) {
@@ -377,7 +474,7 @@ function applyBranding() {
     fallback.textContent = initial;
   });
   if ($("homeBrand")) $("homeBrand").setAttribute("aria-label", `${branding.companyName}, home`);
-  if (!clientMode) document.title = `${branding.companyName} — I tuoi ricordi`;
+  if (!clientMode) document.title = "Polaroid";
 }
 
 function openBrandingSettings() {
@@ -723,7 +820,7 @@ function render() {
   if (clientMode) {
     $("clientGalleryHead").classList.remove("hidden");
     $("clientEventName").textContent = allowedPhotos[0]?.event || "Le tue fotografie";
-    document.title = `${allowedPhotos[0]?.event || "Galleria evento"} — ${branding.companyName}`;
+    document.title = `${allowedPhotos[0]?.event || "Galleria evento"} — Polaroid`;
   }
   const events = [...new Set(allowedPhotos.map(p => p.event))];
   $("filters").innerHTML = ["Tutti", ...events].map(x => `<button class="${x === selectedFilter ? "active" : ""}" data-filter="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join("");
