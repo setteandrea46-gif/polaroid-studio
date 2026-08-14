@@ -18,6 +18,8 @@ const DEFAULT_BRANDING = { companyName: "Polaroid Studio", logoPath: "" };
 let branding = { ...DEFAULT_BRANDING, logoUrl: "" };
 let brandingPreviewUrl = "";
 let removeBrandLogo = false;
+let gallerySessionId = "";
+let galleryHeartbeatTimer = null;
 
 const $ = (id) => document.getElementById(id);
 const grid = $("photoGrid");
@@ -53,7 +55,7 @@ async function init() {
       }
     }
     await loadCloudPhotos();
-    if (clientMode && photos.length) await recordGalleryVisit();
+    if (clientMode && photos.length) await startGallerySession();
     $("modeNote").textContent = "Modalità online attiva: le foto pubblicate saranno visibili a tutti.";
   } else {
     photos = await readLocalPhotos();
@@ -210,8 +212,10 @@ async function loadCloudPhotos() {
     eventCode: p.event_code,
     date: p.event_date,
     downloads: Number(p.download_count || 0),
-    url: `${config.supabaseUrl}/storage/v1/object/public/photos/${p.storage_path}`,
-    path: p.storage_path
+    url: publicPhotoUrl(p.preview_storage_path || p.storage_path),
+    originalUrl: publicPhotoUrl(p.storage_path),
+    path: p.storage_path,
+    previewPath: p.preview_storage_path || ""
   }));
 }
 
@@ -221,24 +225,30 @@ async function updateStorageUsage() {
   const meter = $("storageMeter");
   $("storageUsageText").textContent = "Calcolo spazio…";
   let totalBytes = 0;
-  let offset = 0;
-  const pageSize = 100;
-  while (true) {
-    const { data, error } = await supabase.storage.from("photos").list("", {
-      limit: pageSize,
-      offset,
-      sortBy: { column: "name", order: "asc" }
-    });
-    if (error) {
-      $("storageUsageText").textContent = "Spazio non disponibile";
-      $("storageRemainingText").textContent = "Riprova aggiornando la pagina";
-      return;
+  const folders = new Set(["", "branding"]);
+  photos.flatMap(photo => [photo.path, photo.previewPath]).filter(Boolean).forEach(path => {
+    const parts = String(path).split("/");
+    parts.pop();
+    folders.add(parts.join("/"));
+  });
+  for (const folder of folders) {
+    let offset = 0;
+    const pageSize = 100;
+    while (true) {
+      const { data, error } = await supabase.storage.from("photos").list(folder, {
+        limit: pageSize,
+        offset,
+        sortBy: { column: "name", order: "asc" }
+      });
+      if (error) {
+        $("storageUsageText").textContent = "Spazio non disponibile";
+        $("storageRemainingText").textContent = "Riprova aggiornando la pagina";
+        return;
+      }
+      (data || []).forEach(file => { totalBytes += Number(file.metadata?.size || 0); });
+      if (!data || data.length < pageSize) break;
+      offset += data.length;
     }
-    (data || []).forEach(file => {
-      totalBytes += Number(file.metadata?.size || 0);
-    });
-    if (!data || data.length < pageSize) break;
-    offset += data.length;
   }
   const percent = Math.min(100, (totalBytes / FREE_STORAGE_BYTES) * 100);
   const remaining = Math.max(0, FREE_STORAGE_BYTES - totalBytes);
@@ -255,7 +265,8 @@ async function updateAdminOverview() {
 async function loadAdminStats() {
   if (!cloudEnabled || !supabase || !isAdmin || clientMode) return;
   $("adminOverview").classList.remove("hidden");
-  const { data, error } = await supabase.rpc("get_admin_gallery_stats");
+  let { data, error } = await supabase.rpc("get_admin_engagement_stats");
+  if (error) ({ data, error } = await supabase.rpc("get_admin_gallery_stats"));
   if (error) {
     $("audienceUpdateText").textContent = "Statistiche non disponibili";
     return;
@@ -263,15 +274,55 @@ async function loadAdminStats() {
   const stats = Array.isArray(data) ? data[0] : data;
   $("totalVisitors").textContent = Number(stats?.total_visitors || 0).toLocaleString("it-IT");
   $("totalDownloads").textContent = Number(stats?.total_downloads || 0).toLocaleString("it-IT");
+  $("averageTime").textContent = formatDuration(Number(stats?.average_session_seconds || 0));
   $("audienceUpdateText").textContent = "Aggiornato automaticamente";
 }
 
-async function recordGalleryVisit() {
+async function startGallerySession() {
   if (!clientMode || !requestedEventCode || !supabase) return;
-  await supabase.rpc("record_gallery_visit", {
+  gallerySessionId = crypto.randomUUID();
+  await Promise.all([
+    supabase.rpc("record_gallery_visit", {
+      target_event_code: requestedEventCode,
+      target_visitor_key: crypto.randomUUID()
+    }),
+    heartbeatGallerySession()
+  ]);
+  galleryHeartbeatTimer = setInterval(() => {
+    if (document.visibilityState === "visible") heartbeatGallerySession();
+  }, 10000);
+  document.addEventListener("visibilitychange", () => heartbeatGallerySession(document.visibilityState === "hidden"));
+  window.addEventListener("pagehide", () => heartbeatGallerySession(true), { once: true });
+}
+
+async function heartbeatGallerySession(keepalive = false) {
+  if (!gallerySessionId || !requestedEventCode || !supabase) return;
+  const body = {
     target_event_code: requestedEventCode,
-    target_visitor_key: crypto.randomUUID()
-  });
+    target_session_id: gallerySessionId
+  };
+  if (!keepalive) {
+    await supabase.rpc("record_gallery_session", body);
+    return;
+  }
+  fetch(`${config.supabaseUrl}/rest/v1/rpc/record_gallery_session`, {
+    method: "POST",
+    headers: {
+      apikey: config.supabaseAnonKey,
+      authorization: `Bearer ${config.supabaseAnonKey}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(body),
+    keepalive: true
+  }).catch(() => {});
+}
+
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
 }
 
 function formatStorageBytes(bytes) {
@@ -492,11 +543,47 @@ function resetUploadProgress() {
 
 async function uploadCloud(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value, onProgress = null) {
   for (const [index, file] of files.entries()) {
-    const safeName = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    const { error: storageError } = await supabase.storage.from("photos").upload(safeName, file);
-    if (storageError) throw storageError;
-    const { error: dbError } = await supabase.from("photos").insert({ event_name: eventName, event_date: eventDate, event_code: eventCode, storage_path: safeName });
-    if (dbError) throw dbError;
+    const photoId = crypto.randomUUID();
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safeName = `${eventCode}/${photoId}-${safeFileName}`;
+    const previewName = `previews/${eventCode}/${photoId}.jpg`;
+    const previewBlob = await createPhotoPreview(file);
+    const uploadedPaths = [];
+    try {
+      const { error: storageError } = await supabase.storage.from("photos").upload(safeName, file, {
+        cacheControl: "31536000",
+        contentType: file.type || "application/octet-stream"
+      });
+      if (storageError) throw storageError;
+      uploadedPaths.push(safeName);
+      const { error: previewError } = await supabase.storage.from("photos").upload(previewName, previewBlob, {
+        cacheControl: "31536000",
+        contentType: "image/jpeg"
+      });
+      if (previewError) throw previewError;
+      uploadedPaths.push(previewName);
+      let { error: dbError } = await supabase.from("photos").insert({
+        event_name: eventName,
+        event_date: eventDate,
+        event_code: eventCode,
+        storage_path: safeName,
+        preview_storage_path: previewName
+      });
+      if (dbError && /preview_storage_path/i.test(dbError.message || "")) {
+        await supabase.storage.from("photos").remove([previewName]);
+        uploadedPaths.splice(uploadedPaths.indexOf(previewName), 1);
+        ({ error: dbError } = await supabase.from("photos").insert({
+          event_name: eventName,
+          event_date: eventDate,
+          event_code: eventCode,
+          storage_path: safeName
+        }));
+      }
+      if (dbError) throw dbError;
+    } catch (error) {
+      if (uploadedPaths.length) await supabase.storage.from("photos").remove(uploadedPaths);
+      throw error;
+    }
     onProgress?.(index + 1, files.length);
   }
   await loadCloudPhotos();
@@ -506,18 +593,57 @@ async function uploadCloud(files, eventCode, eventName = $("eventInput").value, 
 async function uploadLocal(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value, onProgress = null) {
   if (photos.every(p => p.sample)) photos = [];
   for (const [index, file] of files.entries()) {
+    const previewBlob = await createPhotoPreview(file);
     const item = {
       id: crypto.randomUUID(),
       event: eventName,
       eventCode,
       date: eventDate,
       blob: file,
+      previewBlob,
       name: file.name
     };
     await saveLocalPhoto(item);
-    photos.unshift({ ...item, url: URL.createObjectURL(file) });
+    photos.unshift({ ...item, url: URL.createObjectURL(previewBlob), originalUrl: URL.createObjectURL(file) });
     onProgress?.(index + 1, files.length);
   }
+}
+
+async function createPhotoPreview(file) {
+  const image = await decodePhoto(file);
+  const sourceWidth = image.width || image.naturalWidth;
+  const sourceHeight = image.height || image.naturalHeight;
+  const maxSide = 1200;
+  const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+  canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) throw new Error("Il telefono non riesce a creare l’anteprima");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  if (typeof image.close === "function") image.close();
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Anteprima non creata")), "image/jpeg", .74);
+  });
+}
+
+async function decodePhoto(file) {
+  if ("createImageBitmap" in window) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      // Alcuni formati di iPhone richiedono il caricamento tramite elemento Image.
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Immagine non leggibile")); };
+    image.src = url;
+  });
 }
 
 async function uploadAdditionalFiles(e) {
@@ -547,7 +673,7 @@ async function removePhoto(id) {
   if (cloudEnabled) {
     const { error } = await supabase.from("photos").delete().eq("id", id);
     if (error) return toast("Eliminazione non riuscita");
-    await supabase.storage.from("photos").remove([photo.path]);
+    await supabase.storage.from("photos").remove([photo.path, photo.previewPath].filter(Boolean));
     await loadCloudPhotos();
     await updateStorageUsage();
   } else {
@@ -565,7 +691,7 @@ async function removeEventBox(eventCode) {
   if (!confirmed) return;
   try {
     if (cloudEnabled) {
-      const paths = eventPhotos.map(photo => photo.path).filter(Boolean);
+      const paths = eventPhotos.flatMap(photo => [photo.path, photo.previewPath]).filter(Boolean);
       for (let index = 0; index < paths.length; index += 100) {
         const { error: storageError } = await supabase.storage.from("photos").remove(paths.slice(index, index + 100));
         if (storageError) throw storageError;
@@ -781,14 +907,16 @@ async function downloadPhoto(id) {
   if (!p) return;
   await recordDownload(p);
   try {
-    const response = await fetch(p.url);
+    const downloadUrl = p.originalUrl || p.url;
+    const response = await fetch(downloadUrl);
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `${p.event.replace(/\s+/g, "-")}-${p.date}.jpg`; a.click();
+    const extension = String(p.path || p.name || "foto.jpg").split(".").pop().replace(/[^a-z0-9]/gi, "") || "jpg";
+    const a = document.createElement("a"); a.href = url; a.download = `${p.event.replace(/\s+/g, "-")}-${p.date}.${extension}`; a.click();
     URL.revokeObjectURL(url);
     toast("Download avviato");
   } catch {
-    window.open(p.url, "_blank");
+    window.open(p.originalUrl || p.url, "_blank");
   }
 }
 

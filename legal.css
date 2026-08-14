@@ -1,11 +1,11 @@
 :root { --ink:#20201e; --paper:#f4efe7; --white:#fffdf9; --rust:#b85235; --muted:#776f66; --line:rgba(32,32,30,.14); }
 * { box-sizing:border-box; }
-body { margin:0; color:var(--ink); background:var(--paper); font-family:"DM Sans",sans-serif; }
+body { margin:0; color:var(--ink); background:var(--paper); font-family:"Manrope",sans-serif; }
 .legal-header { padding:24px clamp(20px,6vw,80px); border-bottom:1px solid var(--line); background:var(--white); }
 .legal-header a { color:var(--ink); text-decoration:none; font-weight:700; }
 .legal-main { width:min(860px,calc(100% - 36px)); margin:45px auto 80px; padding:clamp(28px,6vw,70px); background:var(--white); }
 .eyebrow { margin:0 0 16px; color:var(--rust); font-size:11px; font-weight:700; letter-spacing:.22em; }
-h1,h2 { font-family:"Playfair Display",serif; }
+h1,h2 { font-family:"Cormorant Garamond",serif; font-weight:600; }
 h1 { margin:0 0 28px; font-size:clamp(42px,8vw,72px); line-height:1; }
 h2 { margin:36px 0 12px; font-size:27px; }
 p,li { color:var(--muted); font-size:15px; line-height:1.75; }
