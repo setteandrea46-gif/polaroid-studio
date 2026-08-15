@@ -394,7 +394,8 @@ async function loadBranding() {
   let saved = null;
   if (cloudEnabled) {
     try {
-      saved = await apiFetch("/api/branding");
+      const eventQuery = requestedEventCode ? `?event=${encodeURIComponent(requestedEventCode)}` : "";
+      saved = await apiFetch(`/api/branding${eventQuery}`, {}, isAdmin);
     } catch {
       saved = null;
     }
@@ -502,7 +503,7 @@ async function saveBranding(e) {
     let logoUrl = removeBrandLogo ? "" : branding.logoUrl;
     if (cloudEnabled && logoFile) {
       const safeName = logoFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const uploaded = await uploadImageKitFile(logoFile, `logo-${crypto.randomUUID()}-${safeName}`, "/Polaroid/branding");
+      const uploaded = await uploadImageKitFile(logoFile, `logo-${crypto.randomUUID()}-${safeName}`, "branding");
       uploadedLogoPath = uploaded.fileId;
       logoPath = uploaded.fileId;
       logoUrl = uploaded.url;
@@ -590,7 +591,7 @@ async function uploadCloud(files, eventCode, eventName = $("eventInput").value, 
   for (const [index, file] of files.entries()) {
     const photoId = crypto.randomUUID();
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const uploaded = await uploadImageKitFile(file, `${photoId}-${safeFileName}`, `/Polaroid/${eventCode}`);
+    const uploaded = await uploadImageKitFile(file, `${photoId}-${safeFileName}`, eventCode);
     await apiFetch("/api/photos", { method: "POST", body: JSON.stringify({
       id: photoId,
       eventName,
@@ -612,7 +613,7 @@ async function uploadImageKitFile(file, fileName, folder) {
   const form = new FormData();
   form.append("file", file);
   form.append("fileName", fileName);
-  form.append("folder", folder);
+  form.append("folder", `${auth.folderPrefix}/${String(folder).replace(/^\/+|\/+$/g, "")}`);
   form.append("publicKey", auth.publicKey || config.imagekitPublicKey);
   form.append("signature", auth.signature);
   form.append("expire", String(auth.expire));
