@@ -1,7 +1,5 @@
 const config = window.POLAROID_CONFIG || {};
-const cloudEnabled = Boolean(config.supabaseUrl && config.supabaseAnonKey);
-let supabase = null;
-let supabaseModule = null;
+const cloudEnabled = Boolean(config.apiUrl && config.imagekitUrlEndpoint && config.imagekitPublicKey);
 let isAdmin = false;
 let adminSessionToken = localStorage.getItem("polaroid-admin-session-token") || readCookie("polaroid-admin-session-token") || "";
 let adminProfile = null;
@@ -14,8 +12,7 @@ let selectedFilter = "Tutti";
 let selectedAdminEventCode = "";
 const requestedEventCode = new URLSearchParams(location.search).get("evento");
 const clientMode = Boolean(requestedEventCode);
-const FREE_STORAGE_BYTES = 1024 * 1024 * 1024;
-const BRANDING_SETTINGS_PATH = "branding/settings.json";
+const FREE_STORAGE_BYTES = 3 * 1024 * 1024 * 1024;
 const DEFAULT_BRANDING = { companyName: "Polaroid", logoPath: "" };
 let branding = { ...DEFAULT_BRANDING, logoUrl: "" };
 let brandingPreviewUrl = "";
@@ -45,13 +42,10 @@ async function init() {
   $("dateInput").valueAsDate = new Date();
   document.body.classList.toggle("client-view", clientMode);
   if (cloudEnabled) {
-    supabaseModule = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
     const useStoredSession = !clientMode && Boolean(adminSessionToken);
-    supabase = createSupabaseClient(useStoredSession ? adminSessionToken : "");
-    isAdmin = useStoredSession ? await checkAdmin(supabase) : false;
+    isAdmin = useStoredSession ? await checkAdmin() : false;
     if (useStoredSession && !isAdmin && !clientMode) {
       clearAdminSession();
-      supabase = createSupabaseClient("");
     }
     if (isAdmin) await loadAdminProfile();
     await loadCloudPhotos();
@@ -60,7 +54,7 @@ async function init() {
   } else {
     photos = await readLocalPhotos();
     if (!photos.length) photos = samples;
-    $("modeNote").textContent = "Per proteggere l’area amministratore e condividere i link evento, completa il collegamento sicuro a Supabase.";
+    $("modeNote").textContent = "Per proteggere l’area amministratore e condividere i link evento, completa il collegamento sicuro a ImageKit.";
   }
   await loadBranding();
   document.body.classList.toggle("public-home", !clientMode && !isAdmin);
@@ -132,17 +126,18 @@ function showAuthView(view) {
   $("adminRegisterMessage").textContent = "";
 }
 
-function createSupabaseClient(sessionToken = "") {
-  const headers = sessionToken ? { "x-polaroid-session": sessionToken } : {};
-  return supabaseModule.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    global: { headers },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      storageKey: sessionToken ? "polaroid-admin-session" : "polaroid-public-session"
-    }
-  });
+async function apiFetch(path, options = {}, authenticated = false) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
+  if (authenticated && adminSessionToken) headers.Authorization = `Bearer ${adminSessionToken}`;
+  const response = await fetch(`${config.apiUrl}${path}`, { ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.message || "Operazione non riuscita");
+    error.status = response.status;
+    throw error;
+  }
+  return data;
 }
 
 async function loginAdmin(e) {
@@ -151,29 +146,20 @@ async function loginAdmin(e) {
   const password = $("adminPasswordInput").value;
   const message = $("adminLoginMessage");
   const button = $("adminLoginButton");
-  if (!cloudEnabled || !supabaseModule) {
+  if (!cloudEnabled) {
     message.textContent = "Collegamento online non disponibile.";
     return;
   }
   button.disabled = true;
   message.textContent = "Controllo in corso…";
-  const publicClient = createSupabaseClient("");
-  const { data, error } = await publicClient.rpc("login_admin_account", {
-    supplied_email: identifier,
-    supplied_password: password
-  });
-  button.disabled = false;
-  if (error) {
-    message.textContent = databaseSetupMessage(error);
-    return;
+  try {
+    const result = await apiFetch("/api/login", { method: "POST", body: JSON.stringify({ identifier, password }) });
+    saveAdminSession(result.sessionToken);
+    location.reload();
+  } catch (error) {
+    button.disabled = false;
+    message.textContent = error.message || "E-mail o password non corretti. Puoi riprovare subito.";
   }
-  const result = Array.isArray(data) ? data[0] : data;
-  if (!result?.ok || !result?.session_token) {
-    message.textContent = result?.message || "E-mail o password non corretti. Puoi riprovare subito.";
-    return;
-  }
-  saveAdminSession(result.session_token);
-  location.reload();
 }
 
 async function registerAdmin(e) {
@@ -183,32 +169,31 @@ async function registerAdmin(e) {
   const password = $("registerPasswordInput").value;
   const message = $("adminRegisterMessage");
   const button = $("adminRegisterButton");
-  if (!cloudEnabled || !supabaseModule) return message.textContent = "Collegamento online non disponibile.";
+  if (!cloudEnabled) return message.textContent = "Collegamento online non disponibile.";
   button.disabled = true;
   message.textContent = "Creazione account in corso…";
-  const publicClient = createSupabaseClient("");
-  const { data, error } = await publicClient.rpc("register_admin_account", {
-    supplied_username: username,
-    supplied_email: email,
-    supplied_password: password
-  });
-  button.disabled = false;
-  if (error) return message.textContent = databaseSetupMessage(error);
-  const result = Array.isArray(data) ? data[0] : data;
-  if (!result?.ok || !result?.session_token) return message.textContent = result?.message || "Registrazione non riuscita.";
-  saveAdminSession(result.session_token);
-  location.reload();
+  try {
+    const result = await apiFetch("/api/register", { method: "POST", body: JSON.stringify({ username, email, password }) });
+    saveAdminSession(result.sessionToken);
+    location.reload();
+  } catch (error) {
+    button.disabled = false;
+    message.textContent = error.message || "Registrazione non riuscita.";
+  }
 }
 
-async function checkAdmin(client = supabase) {
-  if (!client) return false;
-  const { data, error } = await client.rpc("is_admin_request");
-  if (error) return null;
-  return data === true;
+async function checkAdmin() {
+  try {
+    const result = await apiFetch("/api/session", {}, true);
+    adminProfile = result.profile || null;
+    return result.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 async function logout() {
-  if (supabase && adminSessionToken) await supabase.rpc("logout_admin_session");
+  if (adminSessionToken) await apiFetch("/api/logout", { method: "POST" }, true).catch(() => {});
   clearAdminSession();
   location.reload();
 }
@@ -248,63 +233,38 @@ function deleteCookie(name) {
 }
 
 async function loadCloudPhotos() {
-  let query = supabase.from("photos").select("*").order("event_date", { ascending: false });
-  if (!isAdmin) {
-    if (!requestedEventCode) {
-      photos = [];
-      return;
-    }
-    query = query.eq("event_code", requestedEventCode);
+  if (!isAdmin && !requestedEventCode) return void (photos = []);
+  try {
+    const query = requestedEventCode ? `?event=${encodeURIComponent(requestedEventCode)}` : "";
+    const data = await apiFetch(`/api/photos${query}`, {}, isAdmin);
+    photos = (data || []).map(p => ({
+      id: p.id,
+      event: p.eventName,
+      eventCode: p.eventCode,
+      date: p.eventDate,
+      downloads: Number(p.downloads || 0),
+      url: p.previewUrl,
+      originalUrl: p.originalUrl,
+      path: p.filePath,
+      fileId: p.fileId,
+      sizeBytes: Number(p.sizeBytes || 0),
+      previewPath: ""
+    }));
+  } catch {
+    photos = [];
+    toast("Impossibile caricare la galleria");
   }
-  const { data, error } = await query;
-  if (error) return toast("Impossibile caricare la galleria");
-  photos = (data || []).map(p => ({
-    id: p.id,
-    event: p.event_name,
-    eventCode: p.event_code,
-    date: p.event_date,
-    downloads: Number(p.download_count || 0),
-    url: publicPhotoUrl(p.preview_storage_path || p.storage_path),
-    originalUrl: publicPhotoUrl(p.storage_path),
-    path: p.storage_path,
-    previewPath: p.preview_storage_path || ""
-  }));
 }
 
 async function updateStorageUsage() {
-  if (!cloudEnabled || !supabase || !isAdmin || clientMode) return;
+  if (!cloudEnabled || !isAdmin || clientMode) return;
   $("adminOverview").classList.remove("hidden");
   const meter = $("storageMeter");
   $("storageUsageText").textContent = "Calcolo spazio…";
-  let totalBytes = 0;
-  const folders = new Set(["", "branding"]);
-  photos.flatMap(photo => [photo.path, photo.previewPath]).filter(Boolean).forEach(path => {
-    const parts = String(path).split("/");
-    parts.pop();
-    folders.add(parts.join("/"));
-  });
-  for (const folder of folders) {
-    let offset = 0;
-    const pageSize = 100;
-    while (true) {
-      const { data, error } = await supabase.storage.from("photos").list(folder, {
-        limit: pageSize,
-        offset,
-        sortBy: { column: "name", order: "asc" }
-      });
-      if (error) {
-        $("storageUsageText").textContent = "Spazio non disponibile";
-        $("storageRemainingText").textContent = "Riprova aggiornando la pagina";
-        return;
-      }
-      (data || []).forEach(file => { totalBytes += Number(file.metadata?.size || 0); });
-      if (!data || data.length < pageSize) break;
-      offset += data.length;
-    }
-  }
+  let totalBytes = photos.reduce((sum, photo) => sum + Number(photo.sizeBytes || 0), 0);
   const percent = Math.min(100, (totalBytes / FREE_STORAGE_BYTES) * 100);
   const remaining = Math.max(0, FREE_STORAGE_BYTES - totalBytes);
-  $("storageUsageText").textContent = `${formatStorageBytes(totalBytes)} di 1 GB in uso (${percent.toFixed(1)}%)`;
+  $("storageUsageText").textContent = `${formatStorageBytes(totalBytes)} di 3 GB in uso (${percent.toFixed(1)}%)`;
   $("storageRemainingText").textContent = `${formatStorageBytes(remaining)} ancora disponibili`;
   $("storageBarFill").style.width = `${totalBytes ? Math.max(.5, percent) : 0}%`;
   meter.classList.toggle("warning", percent >= 85);
@@ -315,31 +275,25 @@ async function updateAdminOverview() {
 }
 
 async function loadAdminStats() {
-  if (!cloudEnabled || !supabase || !isAdmin || clientMode) return;
+  if (!cloudEnabled || !isAdmin || clientMode) return;
   $("adminOverview").classList.remove("hidden");
-  let { data, error } = await supabase.rpc("get_admin_engagement_stats");
-  if (error) ({ data, error } = await supabase.rpc("get_admin_gallery_stats"));
-  if (error) {
+  let stats;
+  try {
+    stats = await apiFetch("/api/stats", {}, true);
+  } catch {
     $("audienceUpdateText").textContent = "Statistiche non disponibili";
     return;
   }
-  const stats = Array.isArray(data) ? data[0] : data;
-  $("totalVisitors").textContent = Number(stats?.total_visitors || 0).toLocaleString("it-IT");
-  $("totalDownloads").textContent = Number(stats?.total_downloads || 0).toLocaleString("it-IT");
-  $("averageTime").textContent = formatDuration(Number(stats?.average_session_seconds || 0));
+  $("totalVisitors").textContent = Number(stats?.totalVisitors || 0).toLocaleString("it-IT");
+  $("totalDownloads").textContent = Number(stats?.totalDownloads || 0).toLocaleString("it-IT");
+  $("averageTime").textContent = formatDuration(Number(stats?.averageSessionSeconds || 0));
   $("audienceUpdateText").textContent = "Aggiornato automaticamente";
 }
 
 async function startGallerySession() {
-  if (!clientMode || !requestedEventCode || !supabase) return;
+  if (!clientMode || !requestedEventCode || !cloudEnabled) return;
   gallerySessionId = crypto.randomUUID();
-  await Promise.all([
-    supabase.rpc("record_gallery_visit", {
-      target_event_code: requestedEventCode,
-      target_visitor_key: crypto.randomUUID()
-    }),
-    heartbeatGallerySession()
-  ]);
+  await apiFetch("/api/visits", { method: "POST", body: JSON.stringify({ eventCode: requestedEventCode, sessionId: gallerySessionId }) }).catch(() => {});
   galleryHeartbeatTimer = setInterval(() => {
     if (document.visibilityState === "visible") heartbeatGallerySession();
   }, 10000);
@@ -348,23 +302,13 @@ async function startGallerySession() {
 }
 
 async function heartbeatGallerySession(keepalive = false) {
-  if (!gallerySessionId || !requestedEventCode || !supabase) return;
-  const body = {
-    target_event_code: requestedEventCode,
-    target_session_id: gallerySessionId
-  };
-  if (!keepalive) {
-    await supabase.rpc("record_gallery_session", body);
-    return;
-  }
-  fetch(`${config.supabaseUrl}/rest/v1/rpc/record_gallery_session`, {
+  if (!gallerySessionId || !requestedEventCode || !cloudEnabled) return;
+  fetch(`${config.apiUrl}/api/visits/${encodeURIComponent(gallerySessionId)}`, {
     method: "POST",
     headers: {
-      apikey: config.supabaseAnonKey,
-      authorization: `Bearer ${config.supabaseAnonKey}`,
       "content-type": "application/json"
     },
-    body: JSON.stringify(body),
+    body: "{}",
     keepalive: true
   }).catch(() => {});
 }
@@ -384,20 +328,15 @@ function formatStorageBytes(bytes) {
   return `${bytes} B`;
 }
 
-function publicPhotoUrl(path) {
-  const encodedPath = String(path).split("/").map(encodeURIComponent).join("/");
-  return `${config.supabaseUrl}/storage/v1/object/public/photos/${encodedPath}`;
-}
-
 async function loadAdminProfile() {
-  if (!supabase || !isAdmin) return;
-  const { data, error } = await supabase.rpc("get_admin_profile");
-  if (error) return;
-  adminProfile = Array.isArray(data) ? data[0] : data;
+  if (!isAdmin) return;
+  try {
+    adminProfile = await apiFetch("/api/profile", {}, true);
+  } catch {}
 }
 
 function openProfileSettings() {
-  $("profileDisplayNameInput").value = adminProfile?.display_name || "";
+  $("profileDisplayNameInput").value = adminProfile?.displayName || "";
   $("profileUsernameInput").value = adminProfile?.username || "Andrea";
   $("profileEmailInput").value = adminProfile?.email || "";
   $("profilePasswordInput").value = "";
@@ -417,29 +356,30 @@ async function saveAdminProfile(e) {
   const message = $("profileMessage");
   button.disabled = true;
   button.textContent = "Salvataggio…";
-  const { data, error } = await supabase.rpc("update_admin_profile", {
-    new_username: $("profileUsernameInput").value.trim(),
-    new_email: $("profileEmailInput").value.trim(),
-    new_display_name: $("profileDisplayNameInput").value.trim(),
-    new_password: $("profilePasswordInput").value || null
-  });
-  button.disabled = false;
-  button.textContent = "Salva profilo";
-  if (error) return message.textContent = databaseSetupMessage(error);
-  const result = Array.isArray(data) ? data[0] : data;
-  if (!result?.ok) return message.textContent = result?.message || "Profilo non aggiornato.";
-  await loadAdminProfile();
-  $("profilePasswordInput").value = "";
-  message.textContent = "Profilo aggiornato su tutti i dispositivi.";
-  toast("Profilo aggiornato");
+  try {
+    await apiFetch("/api/profile", { method: "PUT", body: JSON.stringify({
+      username: $("profileUsernameInput").value.trim(),
+      email: $("profileEmailInput").value.trim(),
+      displayName: $("profileDisplayNameInput").value.trim(),
+      password: $("profilePasswordInput").value || ""
+    }) }, true);
+    await loadAdminProfile();
+    $("profilePasswordInput").value = "";
+    message.textContent = "Profilo aggiornato su tutti i dispositivi.";
+    toast("Profilo aggiornato");
+  } catch (error) {
+    message.textContent = error.message || "Profilo non aggiornato.";
+  } finally {
+    button.disabled = false;
+    button.textContent = "Salva profilo";
+  }
 }
 
 async function loadBranding() {
   let saved = null;
   if (cloudEnabled) {
     try {
-      const response = await fetch(`${publicPhotoUrl(BRANDING_SETTINGS_PATH)}?v=${Date.now()}`, { cache: "no-store" });
-      if (response.ok) saved = await response.json();
+      saved = await apiFetch("/api/branding");
     } catch {
       saved = null;
     }
@@ -451,11 +391,11 @@ async function loadBranding() {
     }
   }
   const companyName = String(saved?.companyName || DEFAULT_BRANDING.companyName).trim().slice(0, 60);
-  const logoPath = String(saved?.logoPath || "");
+  const logoPath = String(saved?.logoFileId || saved?.logoPath || "");
   branding = {
     companyName: companyName || DEFAULT_BRANDING.companyName,
     logoPath,
-    logoUrl: cloudEnabled && logoPath ? `${publicPhotoUrl(logoPath)}?v=${Date.now()}` : String(saved?.logoUrl || "")
+    logoUrl: String(saved?.logoUrl || "")
   };
   applyBranding();
 }
@@ -544,28 +484,22 @@ async function saveBranding(e) {
   message.textContent = "";
   try {
     let logoPath = removeBrandLogo ? "" : branding.logoPath;
+    let logoUrl = removeBrandLogo ? "" : branding.logoUrl;
     if (cloudEnabled && logoFile) {
       const safeName = logoFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      uploadedLogoPath = `branding/logo-${crypto.randomUUID()}-${safeName}`;
-      const { error: logoError } = await supabase.storage.from("photos").upload(uploadedLogoPath, logoFile, {
-        contentType: logoFile.type || "application/octet-stream",
-        cacheControl: "3600"
-      });
-      if (logoError) throw logoError;
-      logoPath = uploadedLogoPath;
+      const uploaded = await uploadImageKitFile(logoFile, `logo-${crypto.randomUUID()}-${safeName}`, "/Polaroid/branding");
+      uploadedLogoPath = uploaded.fileId;
+      logoPath = uploaded.fileId;
+      logoUrl = uploaded.url;
     }
-    const nextBranding = { companyName: companyName.slice(0, 60), logoPath };
+    const nextBranding = { companyName: companyName.slice(0, 60), logoPath, logoUrl };
     if (cloudEnabled) {
-      const settingsFile = new Blob([JSON.stringify(nextBranding)], { type: "application/json" });
-      await supabase.storage.from("photos").remove([BRANDING_SETTINGS_PATH]);
-      const { error: settingsError } = await supabase.storage.from("photos").upload(BRANDING_SETTINGS_PATH, settingsFile, {
-        contentType: "application/json",
-        cacheControl: "0"
-      });
-      if (settingsError) throw settingsError;
-      const previousLogoPath = branding.logoPath;
-      branding = { ...nextBranding, logoUrl: logoPath ? `${publicPhotoUrl(logoPath)}?v=${Date.now()}` : "" };
-      if (previousLogoPath && previousLogoPath !== logoPath) await supabase.storage.from("photos").remove([previousLogoPath]);
+      await apiFetch("/api/branding", { method: "PUT", body: JSON.stringify({
+        companyName: nextBranding.companyName,
+        logoUrl,
+        logoFileId: logoPath
+      }) }, true);
+      branding = nextBranding;
     } else {
       const logoUrl = logoFile ? await fileToDataUrl(logoFile) : (removeBrandLogo ? "" : branding.logoUrl);
       branding = { ...nextBranding, logoUrl };
@@ -578,7 +512,6 @@ async function saveBranding(e) {
     message.textContent = "Impostazioni salvate e visibili ai clienti.";
     toast("Nome e logo aggiornati");
   } catch (error) {
-    if (cloudEnabled && uploadedLogoPath) await supabase.storage.from("photos").remove([uploadedLogoPath]);
     message.textContent = error.message || "Salvataggio non riuscito.";
   } finally {
     button.disabled = false;
@@ -642,49 +575,38 @@ async function uploadCloud(files, eventCode, eventName = $("eventInput").value, 
   for (const [index, file] of files.entries()) {
     const photoId = crypto.randomUUID();
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const safeName = `${eventCode}/${photoId}-${safeFileName}`;
-    const previewName = `previews/${eventCode}/${photoId}.jpg`;
-    const previewBlob = await createPhotoPreview(file);
-    const uploadedPaths = [];
-    try {
-      const { error: storageError } = await supabase.storage.from("photos").upload(safeName, file, {
-        cacheControl: "31536000",
-        contentType: file.type || "application/octet-stream"
-      });
-      if (storageError) throw storageError;
-      uploadedPaths.push(safeName);
-      const { error: previewError } = await supabase.storage.from("photos").upload(previewName, previewBlob, {
-        cacheControl: "31536000",
-        contentType: "image/jpeg"
-      });
-      if (previewError) throw previewError;
-      uploadedPaths.push(previewName);
-      let { error: dbError } = await supabase.from("photos").insert({
-        event_name: eventName,
-        event_date: eventDate,
-        event_code: eventCode,
-        storage_path: safeName,
-        preview_storage_path: previewName
-      });
-      if (dbError && /preview_storage_path/i.test(dbError.message || "")) {
-        await supabase.storage.from("photos").remove([previewName]);
-        uploadedPaths.splice(uploadedPaths.indexOf(previewName), 1);
-        ({ error: dbError } = await supabase.from("photos").insert({
-          event_name: eventName,
-          event_date: eventDate,
-          event_code: eventCode,
-          storage_path: safeName
-        }));
-      }
-      if (dbError) throw dbError;
-    } catch (error) {
-      if (uploadedPaths.length) await supabase.storage.from("photos").remove(uploadedPaths);
-      throw error;
-    }
+    const uploaded = await uploadImageKitFile(file, `${photoId}-${safeFileName}`, `/Polaroid/${eventCode}`);
+    await apiFetch("/api/photos", { method: "POST", body: JSON.stringify({
+      id: photoId,
+      eventName,
+      eventDate,
+      eventCode,
+      fileId: uploaded.fileId,
+      filePath: uploaded.filePath,
+      originalUrl: uploaded.url,
+      sizeBytes: uploaded.size || file.size
+    }) }, true);
     onProgress?.(index + 1, files.length);
   }
   await loadCloudPhotos();
   await updateStorageUsage();
+}
+
+async function uploadImageKitFile(file, fileName, folder) {
+  const auth = await apiFetch("/api/upload-auth", {}, true);
+  const form = new FormData();
+  form.append("file", file);
+  form.append("fileName", fileName);
+  form.append("folder", folder);
+  form.append("publicKey", auth.publicKey || config.imagekitPublicKey);
+  form.append("signature", auth.signature);
+  form.append("expire", String(auth.expire));
+  form.append("token", auth.token);
+  form.append("useUniqueFileName", "false");
+  const response = await fetch("https://upload.imagekit.io/api/v1/files/upload", { method: "POST", body: form });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.message || "Caricamento della fotografia non riuscito");
+  return result;
 }
 
 async function uploadLocal(files, eventCode, eventName = $("eventInput").value, eventDate = $("dateInput").value, onProgress = null) {
@@ -768,11 +690,13 @@ async function removePhoto(id) {
   const photo = photos.find(p => p.id === id);
   if (!photo || !confirm("Vuoi eliminare questa fotografia?")) return;
   if (cloudEnabled) {
-    const { error } = await supabase.from("photos").delete().eq("id", id);
-    if (error) return toast("Eliminazione non riuscita");
-    await supabase.storage.from("photos").remove([photo.path, photo.previewPath].filter(Boolean));
-    await loadCloudPhotos();
-    await updateStorageUsage();
+    try {
+      await apiFetch(`/api/photos/${encodeURIComponent(id)}`, { method: "DELETE" }, true);
+      await loadCloudPhotos();
+      await updateStorageUsage();
+    } catch {
+      return toast("Eliminazione non riuscita");
+    }
   } else {
     photos = photos.filter(p => p.id !== id);
     await deleteLocalPhoto(id);
@@ -788,13 +712,7 @@ async function removeEventBox(eventCode) {
   if (!confirmed) return;
   try {
     if (cloudEnabled) {
-      const paths = eventPhotos.flatMap(photo => [photo.path, photo.previewPath]).filter(Boolean);
-      for (let index = 0; index < paths.length; index += 100) {
-        const { error: storageError } = await supabase.storage.from("photos").remove(paths.slice(index, index + 100));
-        if (storageError) throw storageError;
-      }
-      const { error: databaseError } = await supabase.from("photos").delete().eq("event_code", eventCode);
-      if (databaseError) throw databaseError;
+      await apiFetch(`/api/events/${encodeURIComponent(eventCode)}`, { method: "DELETE" }, true);
       await loadCloudPhotos();
       await updateStorageUsage();
     } else {
@@ -1018,15 +936,15 @@ async function downloadPhoto(id) {
 }
 
 async function recordDownload(photo) {
-  if (!cloudEnabled || !supabase || photo.sample) return;
-  const { data, error } = await supabase.rpc("increment_photo_download", {
-    target_photo_id: photo.id,
-    target_event_code: photo.eventCode
-  });
-  if (!error) {
-    photo.downloads = Number(data || photo.downloads + 1);
+  if (!cloudEnabled || photo.sample) return;
+  try {
+    const result = await apiFetch(`/api/photos/${encodeURIComponent(photo.id)}/download`, {
+      method: "POST",
+      body: JSON.stringify({ eventCode: photo.eventCode })
+    });
+    photo.downloads = Number(result.downloads || photo.downloads + 1);
     if (isAdmin) render();
-  }
+  } catch {}
 }
 
 const DB_NAME = "polaroid-studio";

@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "polaroid-api",
+  "main": "cloudflare-worker.js",
+  "compatibility_date": "2026-08-15",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "polaroid-db",
+      "database_id": "d3cd9dcf-1ebe-419d-a153-8a850e97ea67"
+    }
+  ]
+}

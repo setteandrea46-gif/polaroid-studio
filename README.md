@@ -1,26 +1,21 @@
-# Polaroid Studio
+# Polaroid
 
 Galleria fotografica responsive con:
 
-- area pubblica per cercare e scaricare fotografie;
-- area amministratore per caricare ed eliminare foto;
-- accesso amministratore diretto con nome utente oppure e-mail e password;
-- una box e un link cliente diverso per ogni evento;
-- modalità demo locale pronta all'uso, con archivio IndexedDB adatto anche a più fotografie;
-- modalità cloud con Supabase per condividere le foto tra tutti i dispositivi.
+- area cliente dedicata a ogni evento;
+- fotografie ottimizzate per telefono e originali ad alta qualità al download;
+- area amministratore con account persistente, profilo e personalizzazione;
+- caricamento, aggiunta e cancellazione di foto e intere box;
+- contatori di visite, download e tempo medio;
+- fotografie su ImageKit;
+- dati e accesso su Cloudflare Workers + D1;
+- pubblicazione del sito con GitHub Pages.
 
-## Prova locale
+## Servizi collegati
 
-Apri `index.html` nel browser per visualizzare la galleria dimostrativa. L’accesso amministratore si attiva collegando Supabase.
+- Sito: `https://setteandrea46-gif.github.io/polaroid-studio/`
+- API: `https://polaroid-api.setteandrea46.workers.dev`
+- Archivio immagini: ImageKit, cartella `Polaroid`
 
-## Attivazione online
-
-1. Crea un progetto gratuito su Supabase.
-2. Apri SQL Editor, incolla il contenuto di `supabase.sql` e premi Run.
-3. Inserisci nome utente, e-mail e hash SHA-256 della password nella tabella `admin_settings`.
-4. In Project Settings > API copia Project URL e anon public key.
-5. Inseriscili in `config.js`.
-6. Pubblica questi file con GitHub Pages.
-7. Apri l’area amministratore e accedi con il nome utente oppure con l’e-mail.
-
-Non servono registrazione, conferma e-mail o recupero password. Il controllo non impone attese tra un tentativo e l’altro.
+La chiave privata ImageKit è conservata esclusivamente come secret del Worker
+Cloudflare e non deve essere inserita nei file pubblicati su GitHub.
