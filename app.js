@@ -38,6 +38,7 @@ function svgPhoto(a, b, word) {
 }
 
 async function init() {
+  preventSavedLoginSuggestions();
   $("year").textContent = new Date().getFullYear();
   $("dateInput").valueAsDate = new Date();
   document.body.classList.toggle("client-view", clientMode);
@@ -69,6 +70,20 @@ async function init() {
       await loadAdminStats();
     }, 3000);
   }
+}
+
+function preventSavedLoginSuggestions() {
+  ["adminIdentifierInput", "adminPasswordInput", "registerUsernameInput", "registerEmailInput", "registerPasswordInput"].forEach((id) => {
+    const input = $(id);
+    if (!input) return;
+    input.value = "";
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("readonly", "");
+    input.addEventListener("focus", () => {
+      input.removeAttribute("readonly");
+      input.value = "";
+    }, { once: true });
+  });
 }
 
 function bindEvents() {

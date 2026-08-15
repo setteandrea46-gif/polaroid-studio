@@ -147,8 +147,8 @@
       <p class="eyebrow">AREA RISERVATA</p>
       <h2>Accedi.</h2>
       <p class="dialog-copy">Entra con la tua e-mail e password. La stessa utenza funziona da telefono, tablet e computer.</p>
-      <form id="adminLoginForm">
-        <label>E-mail<input id="adminIdentifierInput" type="email" autocomplete="email" placeholder="setteandrea46@gmail.com" required></label>
+      <form id="adminLoginForm" autocomplete="off">
+        <label>E-mail<input id="adminIdentifierInput" name="polaroid-login-email" type="email" autocomplete="off" placeholder="La tua e-mail" value="" required></label>
         <label>Password<input id="adminPasswordInput" type="password" autocomplete="current-password" placeholder="••••" required></label>
         <button class="primary-button wide" id="adminLoginButton" type="submit">Accedi</button>
         <p class="form-message" id="adminLoginMessage"></p>
@@ -159,9 +159,9 @@
       <p class="eyebrow">NUOVO ACCOUNT</p>
       <h2>Registrati.</h2>
       <p class="dialog-copy">Crea il profilo amministratore. Dopo il primo accesso resterai collegato su questo dispositivo.</p>
-      <form id="adminRegisterForm">
-        <label>Nome utente<input id="registerUsernameInput" autocomplete="username" placeholder="Andrea" required></label>
-        <label>E-mail<input id="registerEmailInput" type="email" autocomplete="email" placeholder="setteandrea46@gmail.com" required></label>
+      <form id="adminRegisterForm" autocomplete="off">
+        <label>Nome utente<input id="registerUsernameInput" name="polaroid-new-username" autocomplete="off" placeholder="Il tuo nome" value="" required></label>
+        <label>E-mail<input id="registerEmailInput" name="polaroid-new-email" type="email" autocomplete="off" placeholder="La tua e-mail" value="" required></label>
         <label>Password<input id="registerPasswordInput" type="password" autocomplete="new-password" minlength="4" placeholder="Almeno 4 caratteri" required></label>
         <button class="primary-button wide" id="adminRegisterButton" type="submit">Crea account</button>
         <p class="form-message" id="adminRegisterMessage"></p>
@@ -251,7 +251,7 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="config.js?v=23"></script>
-  <script type="module" src="app.js?v=23"></script>
+  <script src="config.js?v=24"></script>
+  <script type="module" src="app.js?v=24"></script>
 </body>
 </html>
